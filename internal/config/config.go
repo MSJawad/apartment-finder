@@ -18,6 +18,8 @@ type Config struct {
 	// DatabaseURL is a PostgreSQL connection string. It holds a password, so
 	// it comes from a Kubernetes Secret and never has a default.
 	DatabaseURL string
+	// RegionPath is the region config file, e.g. config/thuringia.json.
+	RegionPath string
 }
 
 // Load builds a Config from getenv, falling back to defaults for unset
@@ -27,9 +29,13 @@ func Load(getenv func(string) string) (Config, error) {
 		Addr:        valueOr(getenv("ADDR"), ":8080"),
 		AdminAddr:   valueOr(getenv("ADMIN_ADDR"), ":9090"),
 		DatabaseURL: getenv("DATABASE_URL"),
+		RegionPath:  getenv("REGION_CONFIG"),
 	}
 	if cfg.DatabaseURL == "" {
 		return Config{}, errors.New("DATABASE_URL is required")
+	}
+	if cfg.RegionPath == "" {
+		return Config{}, errors.New("REGION_CONFIG is required")
 	}
 	if raw := getenv("LOG_LEVEL"); raw != "" {
 		if err := cfg.LogLevel.UnmarshalText([]byte(raw)); err != nil {
