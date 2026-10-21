@@ -63,7 +63,7 @@ func (Manual) Draft(_ context.Context, data []byte) (Draft, error) {
 	d := Draft{Address: input.Text(in.Address), SourceURL: strings.TrimSpace(in.SourceURL)}
 	errs := input.FieldErrors{}
 	if n := utf8.RuneCountInString(d.Address); n < 3 || n > 200 {
-		errs["address"] = "Enter the address, e.g. \"Johannesstraße 10, Erfurt\"."
+		errs["address"] = "Enter the address, e.g. “Johannesstraße 10, Erfurt”."
 	}
 	switch {
 	case in.WarmRentEUR == nil:
