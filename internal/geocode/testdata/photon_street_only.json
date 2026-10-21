@@ -1,0 +1,35 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_type": "W",
+        "osm_id": 84958955,
+        "osm_key": "highway",
+        "osm_value": "secondary",
+        "type": "street",
+        "name": "Magdeburger Allee",
+        "district": "Ilversgehofen",
+        "city": "Erfurt",
+        "state": "Th\u00fcringen",
+        "country": "Deutschland",
+        "postcode": "99086",
+        "countrycode": "DE",
+        "extent": [
+          11.0255611,
+          50.9948848,
+          11.0258232,
+          50.9931109
+        ]
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          11.0256813,
+          50.9939995
+        ]
+      }
+    }
+  ]
+}
