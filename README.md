@@ -172,3 +172,22 @@ Tests start a single PostGIS container per test binary and migrate a template da
 once. Each test gets its own database copied from the template, which takes
 milliseconds. Tests run in parallel without seeing each other's rows, and no test has to
 clean up after itself.
+
+### Scores use fixed thresholds, not a ranking
+
+Each criterion maps its value onto 0 to 1 between two thresholds: a supermarket within
+5 minutes' walk scores 1, one 20 minutes away scores 0, and times in between scale
+linearly. The listing's score is the weighted average of those, times 100.
+
+The alternative is scoring relative to the other listings, where the cheapest gets full
+marks. That feels like a ranking, but adding one listing then changes every other
+listing's score. And since each visitor has their own list, the same apartment would
+score differently for different people. With fixed thresholds, a listing's score depends
+only on the listing and the weights.
+
+A criterion that couldn't be measured, say because no route was found, is left out, and
+the other weights are scaled up to fill its share. The breakdown marks it, so a high
+score with half the criteria missing doesn't pass for a complete one. "There's no gym
+nearby" is different: it's a measurement and scores 0.
+
+Every line of the scoring package is covered by tests, and CI enforces it.
