@@ -15,7 +15,8 @@ scored on the map.
 
 ## Running locally
 
-Requires Go 1.27 and Docker.
+Requires Go 1.27, Docker and [osmium](https://osmcode.org/osmium-tool/) (for the amenity
+import and its tests).
 
 ```sh
 go test -race ./...          # all tests; integration tests start a PostGIS container
@@ -26,6 +27,11 @@ golangci-lint run            # lint
 docker build -t apartment-finder-postgis deploy/postgis
 docker run -d --name apartment-finder-db -e POSTGRES_PASSWORD=dev -p 5432:5432 apartment-finder-postgis
 export DATABASE_URL='postgres://postgres:dev@localhost:5432/postgres?sslmode=disable'
+export REGION_CONFIG=config/thuringia.json
+
+# Load the everyday places (supermarkets, stops, parks...) from OpenStreetMap
+curl -LO https://download.geofabrik.de/europe/germany/thueringen-latest.osm.pbf  # -L: "latest" redirects to a dated file
+go run ./cmd/import-amenities thueringen-latest.osm.pbf
 
 go run ./cmd/api             # public on :8080, admin on :9090
 go run ./cmd/worker          # admin on :9090, so run one at a time or set ADMIN_ADDR
@@ -33,7 +39,8 @@ curl localhost:9090/metrics  # Prometheus metrics
 docker build -t apartment-finder .
 ```
 
-Configuration comes from environment variables: `DATABASE_URL` (required), `ADDR`
+Configuration comes from environment variables: `DATABASE_URL` and `REGION_CONFIG`
+(required), `ADDR`
 (default `:8080`), `ADMIN_ADDR` (default `:9090`) and `LOG_LEVEL` (`debug`, `info`, `warn`
 or `error`; default `info`).
 
@@ -266,3 +273,16 @@ The trade-offs:
 - **Upkeep.** Keeping the import running is now our job.
 - **Safety.** A refresh swaps the whole table in one transaction, and an empty import is
   refused rather than wiping every amenity.
+
+The import uses osmium, the standard command-line tool for OpenStreetMap extracts:
+- **Filtering:** `tags-filter` keeps only objects carrying a category's tags. The filter
+  expressions are generated from the region config, which stays the single source of
+  truth.
+- **Exporting:** `export` turns the result into GeoJSON, assembling parks drawn as
+  multipolygon relations into proper polygons.
+- **Areas, not outlines:** osmium exports a closed way twice, as its outline and as the
+  area inside it. Only points and polygons are kept, so a park is stored as an area and a
+  listing inside it is distance 0 from it.
+
+The tests run the real osmium on a small hand-made extract, then load the result into
+PostGIS and query it.
