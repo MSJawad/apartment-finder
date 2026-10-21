@@ -27,13 +27,34 @@ jobs:
         with:
           version: v2.15.0
       - name: Check shell scripts
-        # shellcheck comes preinstalled on GitHub's Ubuntu runners.
-        run: shellcheck scripts/*.sh
+        # shellcheck comes preinstalled on GitHub's Ubuntu runners. The
+        # server's setup script is a Terraform template: its ${...} values
+        # are filled in by Terraform, so "never assigned" (SC2154) is moot.
+        run: |
+          shellcheck scripts/*.sh
+          shellcheck -s sh -e SC2154 deploy/terraform/setup-node.sh.tftpl
       - name: Check the compose file
         run: docker compose config -q
       - name: Check the page script parses
         # Node comes preinstalled on GitHub's Ubuntu runners.
         run: node --check internal/web/static/app.js
+      - name: Install Terraform
+        # The version used locally, checked against the hash HashiCorp
+        # publishes for it.
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/terraform.zip" https://releases.hashicorp.com/terraform/1.16.6/terraform_1.16.6_linux_amd64.zip
+          echo "38034b38d03096399a7a1264a14561a8029b2b496fd1f169452656e53968f1b7  $RUNNER_TEMP/terraform.zip" | sha256sum -c -
+          unzip -q "$RUNNER_TEMP/terraform.zip" terraform -d "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Check the Terraform
+        # No credentials here: validate checks the configuration without
+        # contacting Oracle. Terraform runs against the cloud from a laptop
+        # only.
+        working-directory: deploy/terraform
+        run: |
+          terraform fmt -check -recursive
+          terraform init -backend=false -input=false
+          terraform validate
 
   test:
     runs-on: ubuntu-24.04
