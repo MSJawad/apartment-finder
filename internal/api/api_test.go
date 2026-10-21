@@ -15,6 +15,7 @@ import (
 
 	"github.com/MSJawad/apartment-finder/internal/dbtest"
 	"github.com/MSJawad/apartment-finder/internal/listing"
+	"github.com/MSJawad/apartment-finder/internal/place"
 	"github.com/MSJawad/apartment-finder/internal/region"
 	"github.com/MSJawad/apartment-finder/internal/visitor"
 )
@@ -44,6 +45,7 @@ func setup(t *testing.T, limits visitor.Limits) (*pgxpool.Pool, *httptest.Server
 	a := &API{
 		Pool: pool, Region: reg, Source: listing.Manual{},
 		Listings: &listing.Store{Pool: pool, Limits: limits},
+		Places:   &place.Store{Pool: pool, Limits: limits},
 		Logger:   slog.New(slog.DiscardHandler),
 	}
 	mux := http.NewServeMux()

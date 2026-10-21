@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/MSJawad/apartment-finder/internal/enrich"
+	"github.com/MSJawad/apartment-finder/internal/place"
 	"github.com/MSJawad/apartment-finder/internal/queue"
 	"github.com/MSJawad/apartment-finder/internal/visitor"
 )
@@ -88,14 +89,14 @@ func (s *Store) Add(ctx context.Context, owner uuid.UUID, source string, d Draft
 // Visible returns the example listings and viewer's own, newest first.
 // uuid.Nil() as viewer means a visitor without listings of their own.
 func (s *Store) Visible(ctx context.Context, viewer uuid.UUID) ([]Listing, error) {
-	return s.query(ctx, "visitor_id IS NULL OR visitor_id = $1", viewer)
+	return s.query(ctx, viewer, "")
 }
 
 // Get returns one listing if viewer may see it, and ErrNotFound otherwise.
 // Another visitor's listing is "not found" rather than "forbidden", so ids
 // reveal nothing about other visitors.
 func (s *Store) Get(ctx context.Context, viewer uuid.UUID, id int64) (Listing, error) {
-	listings, err := s.query(ctx, "(visitor_id IS NULL OR visitor_id = $1) AND id = $2", viewer, id)
+	listings, err := s.query(ctx, viewer, "AND id = $2", id)
 	if err != nil {
 		return Listing{}, err
 	}
@@ -118,16 +119,18 @@ func (s *Store) Delete(ctx context.Context, owner uuid.UUID, id int64) error {
 	return nil
 }
 
-// query loads the listings matching where, then their measurements.
-func (s *Store) query(ctx context.Context, where string, args ...any) ([]Listing, error) {
+// query loads the listings viewer may see that match filter, then their
+// measurements, including the trips to viewer's own places. In filter, $1 is
+// the viewer and args start at $2.
+func (s *Store) query(ctx context.Context, viewer uuid.UUID, filter string, args ...any) ([]Listing, error) {
 	rows, err := s.Pool.Query(ctx, `
 		SELECT id, visitor_id IS NULL, source, address, warm_rent_cents, size_m2, rooms,
 		       coalesce(source_url, ''), status, coalesce(status_detail, ''),
 		       coalesce(geocoded_label, ''), coalesce(geocode_precision, ''),
 		       ST_Y(location::geometry), ST_X(location::geometry), created_at
 		FROM listings
-		WHERE `+where+`
-		ORDER BY created_at DESC, id DESC`, args...)
+		WHERE (visitor_id IS NULL OR visitor_id = $1) `+filter+`
+		ORDER BY created_at DESC, id DESC`, append([]any{viewer}, args...)...)
 	if err != nil {
 		return nil, fmt.Errorf("load listings: %w", err)
 	}
@@ -171,6 +174,30 @@ func (s *Store) query(ctx context.Context, where string, args ...any) ([]Listing
 	})
 	if err != nil {
 		return nil, fmt.Errorf("load measurements: %w", err)
+	}
+
+	// Trips to places are keyed like any other criterion. Only the viewer's
+	// places count: an example listing has trips to every visitor's places.
+	rows, err = s.Pool.Query(ctx, `
+		SELECT pm.listing_id, pm.place_id, pm.minutes, pm.distance_m
+		FROM place_measurements pm
+		JOIN places p ON p.id = pm.place_id
+		WHERE pm.listing_id = ANY($1) AND p.visitor_id = $2`, ids, viewer)
+	if err != nil {
+		return nil, fmt.Errorf("load trips to places: %w", err)
+	}
+	var placeID int64
+	var minutes, distance *float64
+	_, err = pgx.ForEachRow(rows, []any{&listingID, &placeID, &minutes, &distance}, func() error {
+		m := Measurement{Outcome: enrich.Unreachable}
+		if minutes != nil && distance != nil {
+			m = Measurement{Outcome: enrich.Measured, Value: *minutes, DistanceM: *distance}
+		}
+		byID[listingID].Measurements[place.CriterionKey(placeID)] = m
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("load trips to places: %w", err)
 	}
 	return listings, nil
 }
