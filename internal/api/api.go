@@ -7,6 +7,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/MSJawad/apartment-finder/internal/input"
 	"github.com/MSJawad/apartment-finder/internal/listing"
+	"github.com/MSJawad/apartment-finder/internal/place"
 	"github.com/MSJawad/apartment-finder/internal/region"
 	"github.com/MSJawad/apartment-finder/internal/visitor"
 )
@@ -30,6 +32,7 @@ type API struct {
 	Pool     *pgxpool.Pool
 	Region   *region.Region
 	Listings *listing.Store
+	Places   *place.Store
 	// Source reads the add-listing form; see listing.Source.
 	Source listing.Source
 	Logger *slog.Logger
@@ -56,6 +59,9 @@ func (a *API) Register(mux *http.ServeMux) {
 	handle("POST /api/listings", a.addListing)
 	handle("GET /api/listings/{id}", a.getListing)
 	handle("DELETE /api/listings/{id}", a.deleteListing)
+	handle("GET /api/places", a.listPlaces)
+	handle("POST /api/places", a.addPlace)
+	handle("DELETE /api/places/{id}", a.deletePlace)
 }
 
 // viewer returns the visitor making a read request, or uuid.Nil() for
@@ -145,6 +151,11 @@ func toAPIError(err error) *apiError {
 		return &apiError{status: http.StatusBadRequest, Message: "The request body must be a JSON object with the listing's fields."}
 	case errors.Is(err, listing.ErrNotFound):
 		return &apiError{status: http.StatusNotFound, Message: "There's no such listing."}
+	case errors.Is(err, place.ErrNotFound):
+		return &apiError{status: http.StatusNotFound, Message: "There's no such place."}
+	case errors.Is(err, place.ErrTooMany):
+		return &apiError{status: http.StatusConflict,
+			Message: fmt.Sprintf("You can have up to %d places. Delete one to add another.", place.MaxPerVisitor)}
 	}
 	return nil
 }

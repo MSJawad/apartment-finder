@@ -14,6 +14,7 @@ import (
 	"github.com/MSJawad/apartment-finder/internal/db"
 	"github.com/MSJawad/apartment-finder/internal/listing"
 	"github.com/MSJawad/apartment-finder/internal/observability"
+	"github.com/MSJawad/apartment-finder/internal/place"
 	"github.com/MSJawad/apartment-finder/internal/region"
 	"github.com/MSJawad/apartment-finder/internal/server"
 	"github.com/MSJawad/apartment-finder/internal/visitor"
@@ -68,6 +69,7 @@ func run() error {
 		Pool:     pool,
 		Region:   reg,
 		Listings: &listing.Store{Pool: pool, Limits: limits},
+		Places:   &place.Store{Pool: pool, Limits: limits},
 		Source:   listing.Manual{},
 		Logger:   logger,
 	}

@@ -2,14 +2,15 @@ package api
 
 import (
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
+	"uuid"
 
 	"github.com/MSJawad/apartment-finder/internal/enrich"
 	"github.com/MSJawad/apartment-finder/internal/input"
 	"github.com/MSJawad/apartment-finder/internal/listing"
+	"github.com/MSJawad/apartment-finder/internal/place"
 	"github.com/MSJawad/apartment-finder/internal/scoring"
 	"github.com/MSJawad/apartment-finder/internal/visitor"
 )
@@ -91,12 +92,12 @@ type listingsJSON struct {
 // listListings returns the visitor's listings and the examples, ranked under
 // the weights in the query string.
 func (a *API) listListings(w http.ResponseWriter, r *http.Request) {
-	criteria, err := a.criteria(r.URL.Query())
+	viewer, err := a.viewer(w, r)
 	if err != nil {
 		a.fail(w, r, err)
 		return
 	}
-	viewer, err := a.viewer(w, r)
+	defaults, criteria, err := a.criteria(r, viewer)
 	if err != nil {
 		a.fail(w, r, err)
 		return
@@ -111,7 +112,7 @@ func (a *API) listListings(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, err)
 		return
 	}
-	resp := listingsJSON{Criteria: criteriaJSON(a.Region.Criteria(), criteria), Listings: make([]listingJSON, len(ranked))}
+	resp := listingsJSON{Criteria: criteriaJSON(defaults, criteria), Listings: make([]listingJSON, len(ranked))}
 	for i, s := range ranked {
 		resp.Listings[i] = toListingJSON(s)
 	}
@@ -121,17 +122,17 @@ func (a *API) listListings(w http.ResponseWriter, r *http.Request) {
 // getListing returns one listing, scored under the weights in the query
 // string.
 func (a *API) getListing(w http.ResponseWriter, r *http.Request) {
-	id, ok := listingID(r)
+	id, ok := pathID(r)
 	if !ok {
 		a.fail(w, r, listing.ErrNotFound)
 		return
 	}
-	criteria, err := a.criteria(r.URL.Query())
+	viewer, err := a.viewer(w, r)
 	if err != nil {
 		a.fail(w, r, err)
 		return
 	}
-	viewer, err := a.viewer(w, r)
+	_, criteria, err := a.criteria(r, viewer)
 	if err != nil {
 		a.fail(w, r, err)
 		return
@@ -182,7 +183,7 @@ func (a *API) addListing(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) deleteListing(w http.ResponseWriter, r *http.Request) {
-	id, ok := listingID(r)
+	id, ok := pathID(r)
 	if !ok {
 		a.fail(w, r, listing.ErrNotFound)
 		return
@@ -200,17 +201,22 @@ func (a *API) deleteListing(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// criteria returns the region's criteria with any weights from the query
-// string applied.
-func (a *API) criteria(query url.Values) ([]scoring.Criterion, error) {
-	criteria := a.Region.Criteria()
-	known := make(map[string]bool, len(criteria))
-	for _, c := range criteria {
+// criteria returns what viewer's listings are scored on, the region's
+// criteria plus one per place of theirs, both with their default weights
+// and with the weights from the query string applied.
+func (a *API) criteria(r *http.Request, viewer uuid.UUID) (defaults, weighted []scoring.Criterion, err error) {
+	places, err := a.Places.List(r.Context(), viewer)
+	if err != nil {
+		return nil, nil, err
+	}
+	defaults = append(a.Region.Criteria(), place.Criteria(places)...)
+	known := make(map[string]bool, len(defaults))
+	for _, c := range defaults {
 		known[c.Key] = true
 	}
 	weights := map[string]float64{}
 	fields := input.FieldErrors{}
-	for param, values := range query {
+	for param, values := range r.URL.Query() {
 		key, ok := strings.CutPrefix(param, weightPrefix)
 		if !ok {
 			continue
@@ -226,23 +232,24 @@ func (a *API) criteria(query url.Values) ([]scoring.Criterion, error) {
 		}
 	}
 	if len(fields) > 0 {
-		return nil, fields
+		return nil, nil, fields
 	}
-	criteria, err := scoring.WithWeights(criteria, weights)
+	weighted, err = scoring.WithWeights(defaults, weights)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var total float64
-	for _, c := range criteria {
+	for _, c := range weighted {
 		total += c.Weight
 	}
 	if total == 0 {
-		return nil, &apiError{status: http.StatusBadRequest, Message: "Give at least one criterion a weight above 0."}
+		return nil, nil, &apiError{status: http.StatusBadRequest, Message: "Give at least one criterion a weight above 0."}
 	}
-	return criteria, nil
+	return defaults, weighted, nil
 }
 
-func listingID(r *http.Request) (int64, bool) {
+// pathID returns the {id} in the request path, if it is a valid one.
+func pathID(r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	return id, err == nil && id > 0
 }
