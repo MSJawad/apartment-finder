@@ -90,8 +90,12 @@ func start() {
 	_, thisFile, _, _ := runtime.Caller(0)
 	dockerDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "deploy", "postgis")
 
+	// The image is kept so the next run's build is a cache hit, under a fixed
+	// name so runs don't each leave a new tag behind.
 	ctr, err := postgres.Run(ctx, "",
-		testcontainers.WithDockerfile(testcontainers.FromDockerfile{Context: dockerDir, KeepImage: true}),
+		testcontainers.WithDockerfile(testcontainers.FromDockerfile{
+			Context: dockerDir, Repo: "apartment-finder-postgis", Tag: "test", KeepImage: true,
+		}),
 		postgres.BasicWaitStrategies(),
 	)
 	if err != nil {
