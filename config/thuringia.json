@@ -1,0 +1,76 @@
+{
+  "name": "Thuringia",
+  "bbox": [9.8632, 50.1997, 12.6611, 51.6524],
+  "map": { "lat": 50.9777, "lon": 11.0365, "zoom": 13 },
+  "osm_extract": "https://download.geofabrik.de/europe/germany/thueringen-latest.osm.pbf",
+  "listing": {
+    "rent_per_m2": { "best": 9, "worst": 16, "weight": 3 },
+    "size_m2": { "best": 70, "worst": 30, "weight": 1 },
+    "rooms": { "best": 3, "worst": 1, "weight": 1 }
+  },
+  "categories": [
+    {
+      "key": "supermarket",
+      "label": "Supermarket",
+      "mode": "walk",
+      "best_min": 5,
+      "worst_min": 20,
+      "weight": 3,
+      "osm": [{ "shop": "supermarket" }]
+    },
+    {
+      "key": "transit_stop",
+      "label": "Public transport stop",
+      "mode": "walk",
+      "best_min": 3,
+      "worst_min": 12,
+      "weight": 3,
+      "osm": [{ "highway": "bus_stop" }, { "railway": "tram_stop" }]
+    },
+    {
+      "key": "pharmacy",
+      "label": "Pharmacy",
+      "mode": "walk",
+      "best_min": 5,
+      "worst_min": 25,
+      "weight": 1,
+      "osm": [{ "amenity": "pharmacy" }]
+    },
+    {
+      "key": "doctor",
+      "label": "Doctor",
+      "mode": "bike",
+      "best_min": 5,
+      "worst_min": 20,
+      "weight": 1,
+      "osm": [{ "amenity": "doctors" }]
+    },
+    {
+      "key": "park",
+      "label": "Park",
+      "mode": "walk",
+      "best_min": 5,
+      "worst_min": 20,
+      "weight": 2,
+      "osm": [{ "leisure": "park" }]
+    },
+    {
+      "key": "train_station",
+      "label": "Train station",
+      "mode": "bike",
+      "best_min": 10,
+      "worst_min": 30,
+      "weight": 1,
+      "osm": [{ "railway": "station" }]
+    },
+    {
+      "key": "gym",
+      "label": "Gym",
+      "mode": "bike",
+      "best_min": 5,
+      "worst_min": 20,
+      "weight": 2,
+      "osm": [{ "leisure": "fitness_centre" }]
+    }
+  ]
+}
