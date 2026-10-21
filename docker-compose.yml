@@ -1,0 +1,44 @@
+# Local development: the database and the two routers. The routers need
+# data from scripts/prepare-routing.sh first.
+
+x-osrm-image: &osrm-image ghcr.io/project-osrm/osrm-backend:v6.0.0@sha256:729461bcc9ae9e6aafa92c0f93db9b060a32e85d5e72092c01ae4a4a9f1eb564
+
+services:
+  db:
+    build: deploy/postgis
+    image: apartment-finder-postgis
+    environment:
+      POSTGRES_PASSWORD: dev # local only; the port is bound to localhost
+    ports: ["127.0.0.1:5432:5432"]
+    # Postgres 18 images keep their data under a versioned directory here.
+    volumes: ["pgdata:/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 2s
+
+  osrm-walk:
+    image: *osrm-image
+    command: osrm-routed --algorithm mld /data/region.osrm
+    ports: ["127.0.0.1:5001:5000"]
+    volumes: ["./data/routing/walk:/data:ro"]
+    healthcheck: &osrm-health
+      # Any coordinate inside the extract works: /nearest only needs the data loaded.
+      # 127.0.0.1, not localhost: that resolves to ::1 first, and OSRM listens on IPv4.
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5000/nearest/v1/x/11.0365,50.9777"]
+      interval: 2s
+
+  osrm-bike:
+    image: *osrm-image
+    command: osrm-routed --algorithm mld /data/region.osrm
+    ports: ["127.0.0.1:5002:5000"]
+    volumes: ["./data/routing/bike:/data:ro"]
+    healthcheck: *osrm-health
+
+  # Runs the preparation steps for scripts/prepare-routing.sh; never started by `up`.
+  osrm-prepare:
+    image: *osrm-image
+    profiles: [tools]
+    volumes: ["./data:/data"]
+
+volumes:
+  pgdata:
