@@ -5,6 +5,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -15,13 +16,16 @@ import (
 
 var anger = Point{Lat: 50.9777, Lon: 11.0365}
 
-// fakeOSRM answers table requests like osrm-routed: each destination takes
-// 60 s per index (1 min, 2 min, ...) and 100 m per index, except those whose
-// longitude is 0, which are unreachable. It records the requests.
+// fakeOSRM answers table requests like osrm-routed. A trip between
+// locations i and j takes (i+j) minutes and (i+j)×100 m, so with the fixed
+// point at 0 each other location takes its index in minutes, in either
+// direction. Locations with longitude 0 are unreachable. It records the
+// requests.
 type fakeOSRM struct {
 	*httptest.Server
-	requests atomic.Int32
-	lastPath atomic.Value
+	requests  atomic.Int32
+	lastPath  atomic.Value
+	lastQuery atomic.Value
 }
 
 func newFakeOSRM(t *testing.T) *fakeOSRM {
@@ -30,7 +34,15 @@ func newFakeOSRM(t *testing.T) *fakeOSRM {
 	f.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.requests.Add(1)
 		f.lastPath.Store(r.URL.Path)
-		if q := r.URL.Query(); q.Get("sources") != "0" || q.Get("annotations") != "duration,distance" {
+		f.lastQuery.Store(r.URL.RawQuery)
+		// OSRM separates list items with ";", which url.ParseQuery rejects,
+		// so the query is split by hand.
+		q := map[string]string{}
+		for _, pair := range strings.Split(r.URL.RawQuery, "&") {
+			k, v, _ := strings.Cut(pair, "=")
+			q[k] = v
+		}
+		if q["annotations"] != "duration,distance" {
 			t.Errorf("unexpected query %s", r.URL.RawQuery)
 		}
 		coords := strings.Split(strings.TrimPrefix(r.URL.Path[strings.LastIndex(r.URL.Path, "/"):], "/"), ";")
@@ -39,18 +51,37 @@ func newFakeOSRM(t *testing.T) *fakeOSRM {
 			_, _ = w.Write([]byte(`{"code":"TooBig","message":"Too many table coordinates"}`))
 			return
 		}
-		durations := make([]*float64, len(coords))
-		distances := make([]*float64, len(coords))
-		for i, c := range coords {
-			if strings.HasPrefix(c, "0,") {
-				continue // unreachable: null
+		indexes := func(param string) []int {
+			var out []int
+			if q[param] == "" {
+				for i := range coords {
+					out = append(out, i)
+				}
+				return out
 			}
-			d, m := float64(i*60), float64(i*100)
-			durations[i], distances[i] = &d, &m
+			for _, s := range strings.Split(q[param], ";") {
+				i, err := strconv.Atoi(s)
+				if err != nil {
+					t.Errorf("bad %s %q", param, q[param])
+				}
+				out = append(out, i)
+			}
+			return out
 		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"code": "Ok", "durations": [][]*float64{durations}, "distances": [][]*float64{distances},
-		})
+		var durations, distances [][]*float64
+		for _, src := range indexes("sources") {
+			var durationRow, distanceRow []*float64
+			for _, dst := range indexes("destinations") {
+				if strings.HasPrefix(coords[src], "0,") || strings.HasPrefix(coords[dst], "0,") {
+					durationRow, distanceRow = append(durationRow, nil), append(distanceRow, nil)
+					continue
+				}
+				d, m := float64((src+dst)*60), float64((src+dst)*100)
+				durationRow, distanceRow = append(durationRow, &d), append(distanceRow, &m)
+			}
+			durations, distances = append(durations, durationRow), append(distances, distanceRow)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": "Ok", "durations": durations, "distances": distances})
 	}))
 	t.Cleanup(f.Close)
 	return f
@@ -91,6 +122,63 @@ func TestTable(t *testing.T) {
 	if got := osrm.lastPath.Load(); got != wantPath {
 		t.Errorf("path = %s, want %s (longitude first, origin first)", got, wantPath)
 	}
+	if got := osrm.lastQuery.Load(); got != "sources=0&annotations=duration,distance" {
+		t.Errorf("query = %s, want only the origin as source", got)
+	}
+}
+
+func TestTableTo(t *testing.T) {
+	osrm := newFakeOSRM(t)
+	client := newClient(osrm.URL)
+
+	origins := []Point{
+		{Lat: 50.9786, Lon: 11.0365},
+		{Lat: 50.9, Lon: 0}, // unreachable
+		{Lat: 50.9725, Lon: 11.0385},
+	}
+	legs, err := client.TableTo(t.Context(), region.Walk, origins, anger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Leg{
+		{Reachable: true, Minutes: 1, DistanceM: 100},
+		{Reachable: false},
+		{Reachable: true, Minutes: 3, DistanceM: 300},
+	}
+	if len(legs) != len(want) {
+		t.Fatalf("got %d legs, want %d", len(legs), len(want))
+	}
+	for i := range want {
+		if legs[i] != want[i] {
+			t.Errorf("leg %d = %+v, want %+v", i, legs[i], want[i])
+		}
+	}
+	// The destination is location 0, and every origin is a source.
+	wantPath := "/table/v1/walk/11.0365,50.9777;11.0365,50.9786;0,50.9;11.0385,50.9725"
+	if got := osrm.lastPath.Load(); got != wantPath {
+		t.Errorf("path = %s, want %s", got, wantPath)
+	}
+	if got := osrm.lastQuery.Load(); got != "sources=1;2;3&destinations=0&annotations=duration,distance" {
+		t.Errorf("query = %s, want the origins as sources and the destination alone", got)
+	}
+}
+
+func TestTableToSplitsLargeRequests(t *testing.T) {
+	osrm := newFakeOSRM(t)
+	origins := make([]Point, 150)
+	for i := range origins {
+		origins[i] = Point{Lat: 50.9, Lon: 11 + float64(i)/1000}
+	}
+	legs, err := newClient(osrm.URL).TableTo(t.Context(), region.Walk, origins, anger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := osrm.requests.Load(); n != 2 || len(legs) != 150 {
+		t.Fatalf("%d requests and %d legs, want 2 and 150", n, len(legs))
+	}
+	if legs[98].Minutes != 99 || legs[99].Minutes != 1 {
+		t.Errorf("legs 98 and 99 took %v and %v min, want 99 and 1: results out of order", legs[98].Minutes, legs[99].Minutes)
+	}
 }
 
 func TestTableSplitsLargeRequests(t *testing.T) {
@@ -130,6 +218,7 @@ func TestTableErrors(t *testing.T) {
 		{"OSRM error code", http.StatusBadRequest, `{"code":"InvalidQuery","message":"Query string malformed"}`, region.Walk, "InvalidQuery"},
 		{"not JSON", http.StatusBadGateway, "<html>bad gateway</html>", region.Walk, "HTTP 502"},
 		{"wrong size", http.StatusOK, `{"code":"Ok","durations":[[0]],"distances":[[0]]}`, region.Walk, "wrong size"},
+		{"ragged rows", http.StatusOK, `{"code":"Ok","durations":[[0,1]],"distances":[[0]]}`, region.Walk, "wrong size"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
