@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -248,4 +249,33 @@ func count(t *testing.T, pool *pgxpool.Pool, sql string) int {
 		t.Fatal(err)
 	}
 	return n
+}
+
+func TestDeleteFinished(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	// One job in each state, finished 10 days ago.
+	if _, err := pool.Exec(t.Context(), `
+		INSERT INTO jobs (kind, status, updated_at)
+		SELECT 'test', s, now() - interval '10 days'
+		FROM unnest(ARRAY['pending', 'running', 'done', 'dead']) AS s`); err != nil {
+		t.Fatal(err)
+	}
+	// Done jobs go after a week; dead ones are kept for a month.
+	deleted, err := queue.DeleteFinished(t.Context(), pool, 7*24*time.Hour, 30*24*time.Hour)
+	if err != nil || deleted != 1 {
+		t.Fatalf("DeleteFinished() = %d, %v; want 1", deleted, err)
+	}
+	var left []string
+	rows, err := pool.Query(t.Context(), "SELECT status FROM jobs ORDER BY status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	left, err = pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(left, ",") != "dead,pending,running" {
+		t.Errorf("jobs left: %v, want dead, pending and running", left)
+	}
 }
