@@ -59,6 +59,36 @@ Configuration comes from environment variables:
 | `ADMIN_ADDR` | `:9090` | probes and metrics |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 
+## Deploying the server
+
+Everything in the cloud is created by Terraform in `deploy/terraform`: a virtual network,
+a firewall, and one Arm server with k3s. It runs from your laptop only; CI never holds
+cloud credentials.
+
+You need an Oracle Cloud account with Frankfurt as its home region, an API key in
+`~/.oci/config` (Oracle's console shows the file's contents when you add the key), and
+Terraform.
+
+```sh
+cd deploy/terraform
+cp terraform.tfvars.example terraform.tfvars   # fill in tenancy_ocid from ~/.oci/config
+terraform init
+terraform apply                                # about a minute; prints the server's IP
+ssh ubuntu@<ip> cloud-init status --wait       # first boot installs k3s, about a minute
+
+# kubectl from the laptop, through SSH: the Kubernetes API isn't reachable from outside
+ssh ubuntu@<ip> sudo cat /etc/rancher/k3s/k3s.yaml \
+  | sed 's#127.0.0.1:6443#127.0.0.1:16443#' > ~/.kube/apartment-finder.yaml
+chmod 600 ~/.kube/apartment-finder.yaml
+ssh -fN -L 16443:127.0.0.1:6443 ubuntu@<ip>
+KUBECONFIG=~/.kube/apartment-finder.yaml kubectl get nodes
+
+terraform destroy                              # removes everything
+```
+
+On "Out of host capacity", free Arm servers are short in that availability domain: set
+`availability_domain = 2` (or 3) in `terraform.tfvars` and apply again.
+
 ## API
 
 JSON over HTTP. A visitor is identified by a cookie that the first `POST` sets; see
@@ -535,3 +565,91 @@ directions with OSRM, came out within 20% of ours:
 
 Ours run a little shorter. The public servers use their own walking and cycling
 profiles, which differ from OSRM's defaults.
+
+### Oracle Cloud's free tier, and treating it as revocable
+
+The whole stack needs about 4 GB of memory: two routers at 0.4 GB each, Postgres, k3s,
+the API and the worker. Of the big clouds, only Oracle gives that away with no end date:
+its Always Free tier includes 2 Arm cores and 12 GB of memory.
+- **AWS** now gives new accounts $100 to $200 of credits for six months, after which the
+  account closes unless upgraded; a 4 GB Arm server then costs about $30 a month.
+- **Google Cloud** and **Azure** give away 1 GB servers, too small for this stack.
+
+Oracle can change its free tier, and did in 2026, halving the free Arm allowance to what
+this project uses. So the deployment is built to be lost:
+- **Everything is code.** `terraform destroy` followed by `terraform apply` rebuilds the
+  server in under a minute, and that cycle has been run for real.
+- **The data comes back.** Amenities, routing data and examples are rebuilt from
+  OpenStreetMap; visitors' data lasts 30 days anyway.
+- **Only one layer is Oracle's.** Kubernetes, the images and CI run on any Linux server.
+  Each Terraform resource has a direct AWS equivalent: virtual cloud network for VPC,
+  security list for security group, internet gateway for internet gateway, instance for
+  EC2.
+
+The home region is Frankfurt, which can never be changed: it's closest to Thuringia,
+keeps visitors' data in the EU, and has three availability domains to try when one runs
+out of free Arm capacity. Every other EU region has one.
+
+### Terraform runs from a laptop, with state kept there
+
+Terraform needs Oracle API credentials. Running it only from a laptop keeps them out of
+GitHub entirely: CI checks the Terraform (`fmt` and `validate`, which need no account)
+but never applies it.
+
+The state, Terraform's record of what it created, stays on the laptop too, gitignored.
+With one person running Terraform, a shared state backend adds a bucket to bootstrap for
+little gain. If the state were lost, the server would keep running and could be imported
+or rebuilt.
+
+### One server running k3s
+
+Kubernetes on one server is k3s: a single binary with the pieces a small cluster needs
+built in, including the Traefik ingress, a load balancer that uses the server's own ports,
+and local disk volumes. It keeps cluster state in SQLite instead of running etcd. The
+whole cluster, with Traefik and DNS, uses about 1.2 GB of the server's 12.
+
+### Pinned, and checked before it runs
+
+- **The OS image** is chosen by its exact name, so rebuilding gives the same server; it
+  keeps itself patched with Ubuntu's automatic security updates in between.
+- **k3s** is a pinned release, and both its binary and its install script are checked
+  against SHA-256 hashes in the Terraform before anything runs. A tampered download
+  stops the setup.
+- **Terraform in CI** is the same version as locally, checked against HashiCorp's
+  published hash.
+
+### Oracle's Ubuntu firewall breaks Kubernetes, quietly
+
+Oracle's Ubuntu images come with their own iptables rules that reject everything except
+SSH, on top of the cloud firewall. They also reject all forwarded traffic, which is how
+Kubernetes moves packets to pods. So a fresh cluster looks healthy, but web traffic never
+reaches it, and pods can't talk to each other.
+
+The first-boot script fixes this before k3s starts:
+- it stops rejecting forwarded traffic
+- it lets pods and services (`10.42.0.0/16`, `10.43.0.0/16`) reach the server
+- it opens ports 80 and 443
+
+The cloud firewall still decides what gets in from outside. This was checked end to end:
+a test page behind Traefik answered over the public IP, a pod resolved names through the
+cluster's DNS, and everything still worked after a reboot.
+
+### Locked down by default
+
+- **Only SSH, HTTP and HTTPS** get through the cloud firewall. The Kubernetes API (6443)
+  and the kubelet (10250) were checked and are unreachable from outside; `kubectl` goes
+  through an SSH tunnel.
+- **SSH is keys only.** Port 22 is open to anyone so it works from anywhere, but password
+  and root logins are off, so there is nothing to guess.
+- **The cloud metadata service** answers only its token-based version, which makes it
+  harder for a request forged through an app on the server to read the server's
+  credentials.
+- **Kubernetes Secrets are encrypted** on disk.
+
+The server's public IP is ephemeral: free with the server, but replaced if the server is
+replaced. Oracle's docs don't list a reserved IP as Always Free, so the deployment's DNS
+follows the IP instead.
+
+One more free-tier rule: Oracle may reclaim a server whose CPU, network and memory all
+stay under 20% for a week. An empty cluster uses about 10% of the memory, so the deployed
+app has to keep memory above 20% by design, not by luck.
