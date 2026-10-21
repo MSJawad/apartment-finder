@@ -45,6 +45,22 @@ func (c Criterion) Validate() error {
 	return nil
 }
 
+// Validate reports the first problem with criteria: an invalid criterion, or
+// two with the same key.
+func Validate(criteria []Criterion) error {
+	seen := make(map[string]bool, len(criteria))
+	for _, c := range criteria {
+		if err := c.Validate(); err != nil {
+			return err
+		}
+		if seen[c.Key] {
+			return fmt.Errorf("criterion %s appears twice", c.Key)
+		}
+		seen[c.Key] = true
+	}
+	return nil
+}
+
 // Score maps value onto 0 to 1.
 func (c Criterion) Score(value float64) float64 {
 	t := (value - c.Worst) / (c.Best - c.Worst)
@@ -78,17 +94,12 @@ type Result struct {
 // Score scores the values, keyed by criterion key, against criteria. A
 // criterion without a value counts as not measured.
 func Score(criteria []Criterion, values map[string]float64) (Result, error) {
+	if err := Validate(criteria); err != nil {
+		return Result{}, err
+	}
 	components := make([]Component, len(criteria))
-	seen := make(map[string]bool, len(criteria))
 	var totalWeight float64
 	for i, c := range criteria {
-		if err := c.Validate(); err != nil {
-			return Result{}, err
-		}
-		if seen[c.Key] {
-			return Result{}, fmt.Errorf("criterion %s appears twice", c.Key)
-		}
-		seen[c.Key] = true
 		value, measured := values[c.Key]
 		if measured && !finite(value) {
 			return Result{}, fmt.Errorf("criterion %s: value %v is not a number", c.Key, value)
