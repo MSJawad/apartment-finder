@@ -1,0 +1,39 @@
+#!/bin/sh
+# Prepares the server at first boot: opens the host firewall for Kubernetes
+# and installs k3s.
+set -eu
+
+# Apply the SSH settings cloud-init just wrote, if sshd is already running.
+systemctl try-reload-or-restart ssh
+
+# Oracle's Ubuntu images ship their own iptables rules that reject
+# everything but SSH, behind the cloud firewall. Kubernetes needs:
+#   - forwarding: traffic to pods, including web traffic sent to Traefik,
+#     is forwarded, and the image rejects all forwarding
+#   - pods and services (10.42/16 and 10.43/16) reaching the node, e.g. the
+#     API server
+# Ports 80 and 443 are opened too. The cloud firewall still only lets SSH,
+# HTTP and HTTPS in from outside. This runs before k3s starts, so the saved
+# rules hold only these, not k3s's own.
+iptables -I INPUT 1 -p tcp -m multiport --dports 80,443 -j ACCEPT
+iptables -I INPUT 1 -s 10.42.0.0/16 -j ACCEPT
+iptables -I INPUT 1 -s 10.43.0.0/16 -j ACCEPT
+if iptables -C FORWARD -j REJECT --reject-with icmp-host-prohibited 2>/dev/null; then
+  iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited
+fi
+netfilter-persistent save
+
+# k3s, pinned: the binary and the install script are both checked against
+# hashes from the Terraform variables before anything runs.
+#
+# Downloads retry on any error, such as TLS failing while the clock is
+# still being set right after boot, and print the error if they give up.
+download() {
+  curl -sSfL --retry 10 --retry-all-errors --retry-delay 3 -o "$1" "$2"
+}
+download /usr/local/bin/k3s "https://github.com/k3s-io/k3s/releases/download/${k3s_version_url}/k3s-arm64"
+echo "${k3s_sha256}  /usr/local/bin/k3s" | sha256sum -c -
+chmod 0755 /usr/local/bin/k3s
+download /tmp/k3s-install.sh "https://raw.githubusercontent.com/k3s-io/k3s/${k3s_version_url}/install.sh"
+echo "${k3s_install_sha256}  /tmp/k3s-install.sh" | sha256sum -c -
+INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_VERSION='${k3s_version}' sh /tmp/k3s-install.sh

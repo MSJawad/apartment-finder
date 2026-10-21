@@ -9,3 +9,10 @@ coverage.out
 
 # Downloaded extracts and prepared routing data
 /data/
+
+# Terraform: state and local variables stay on the laptop that runs it
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+crash.log

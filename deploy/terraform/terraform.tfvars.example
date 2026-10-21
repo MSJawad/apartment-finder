@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars (gitignored) and fill in. The tenancy OCID is in
+# ~/.oci/config.
+tenancy_ocid = "ocid1.tenancy.oc1..aaaa..."
+
+# Optional overrides; see variables.tf.
+# availability_domain = 2
+# ssh_public_key_file = "~/.ssh/id_ed25519.pub"

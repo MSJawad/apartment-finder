@@ -1,0 +1,23 @@
+#cloud-config
+# First-boot setup; its output is in /var/log/cloud-init-output.log.
+
+write_files:
+  - path: /etc/rancher/k3s/config.yaml
+    permissions: "0600"
+    content: |
+      node-name: apartment-finder
+      # Kubernetes Secrets, like the database password, are encrypted on disk.
+      secrets-encryption: true
+  - path: /etc/ssh/sshd_config.d/60-hardening.conf
+    content: |
+      # Only the ubuntu user logs in, and only with its key.
+      PermitRootLogin no
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+  - path: /usr/local/sbin/setup-node.sh
+    permissions: "0755"
+    content: |
+      ${indent(6, setup_script)}
+
+runcmd:
+  - [/usr/local/sbin/setup-node.sh]
