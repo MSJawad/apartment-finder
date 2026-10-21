@@ -1,0 +1,1 @@
+{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"osm_type":"W","osm_id":2,"osm_key":"highway","osm_value":"residential","type":"street","name":"Johannesstraße","city":"Erfurt","postcode":"99084","countrycode":"DE"},"geometry":{"type":"Point","coordinates":[11.0302,50.9806]}}]}

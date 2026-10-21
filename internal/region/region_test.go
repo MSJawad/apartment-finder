@@ -36,6 +36,7 @@ func TestParseRejectsBadConfigs(t *testing.T) {
 	}{
 		{"unknown field", func(r map[string]any) { r["colour"] = "blue" }, "unknown field"},
 		{"no name", func(r map[string]any) { r["name"] = "" }, "name is missing"},
+		{"bad language", func(r map[string]any) { r["language"] = "German" }, "two-letter code"},
 		{"bbox corners swapped", func(r map[string]any) { r["bbox"] = []float64{12, 51, 10, 50} }, "bbox must be"},
 		{"map outside bbox", func(r map[string]any) { r["map"] = map[string]any{"lat": 52.5, "lon": 13.4, "zoom": 13} }, "map center"},
 		{"map zoom", func(r map[string]any) { r["map"] = map[string]any{"lat": 51, "lon": 11, "zoom": 0} }, "zoom"},
@@ -111,6 +112,7 @@ func validConfig(t *testing.T) map[string]any {
 	t.Helper()
 	return map[string]any{
 		"name":        "Test",
+		"language":    "de",
 		"bbox":        []float64{10, 50, 12, 52},
 		"map":         map[string]any{"lat": 51, "lon": 11, "zoom": 13},
 		"osm_extract": "https://example.com/test.osm.pbf",
