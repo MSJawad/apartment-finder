@@ -47,6 +47,25 @@ Configuration comes from environment variables: `DATABASE_URL` and `REGION_CONFI
 (default `:8080`), `ADMIN_ADDR` (default `:9090`) and `LOG_LEVEL` (`debug`, `info`, `warn`
 or `error`; default `info`).
 
+## API
+
+JSON over HTTP. A visitor is identified by a cookie that the first `POST` sets; see
+"Visitors are a cookie, not accounts" below.
+
+| Request | What it does |
+| --- | --- |
+| `GET /api/region` | The region's name, bounding box and where the map opens |
+| `GET /api/listings` | The example listings and your own, ranked, with each score's breakdown and the criteria |
+| `GET /api/listings?weight.<criterion>=<0-10>` | The same, with your weights, e.g. `weight.rent_per_m2=5&weight.category:gym=0` |
+| `POST /api/listings` | Add a listing: `address`, `warm_rent_eur`, `size_m2`, `rooms`, and optionally `source_url`. Answers `202 Accepted` with the listing, still `pending` |
+| `GET /api/listings/{id}` | One listing, with the same `weight.` parameters |
+| `DELETE /api/listings/{id}` | Delete one of your listings |
+
+Errors are `{"error": "...", "fields": {"rooms": "..."}}`, with `fields` naming each
+invalid field. Status codes: 400 for invalid input, 403 for a request from another site,
+404 for a listing that isn't yours or doesn't exist, 413 and 415 for oversized or
+non-JSON bodies, 429 with `Retry-After` when a limit is reached.
+
 ## Decisions
 
 Each non-obvious choice, with the options considered and why this one won.
@@ -201,6 +220,80 @@ score with half the criteria missing doesn't pass for a complete one. "There's n
 nearby" is different: it's a measurement and scores 0.
 
 Every line of the scoring package is covered by tests, and CI enforces it.
+
+### Scores are worked out on every read
+
+The worker stores measurements, such as "6.5 minutes' walk to Netto", never scores. Each
+`GET /api/listings` scores the listings from those measurements, with the weights in the
+query string.
+
+- **Sliders are cheap.** Moving a weight is just another read: nothing is re-measured or
+  written.
+- **One scoring implementation.** The scoring logic lives only in Go; the page shows what
+  the API returns and has no scoring code of its own to drift out of step.
+- **Thresholds can change.** New thresholds in the region config apply to every listing at
+  the next read.
+
+It costs a little CPU per request: ranking 50 listings on 10 criteria takes about 0.1 ms.
+
+### Visitors are a cookie, not accounts
+
+There are no sign-ups. A visitor is a random id in a cookie, and whoever holds the cookie
+sees and edits that visitor's listings. Accounts would mean passwords or email
+addresses: personal data, and a lot to secure, for a site where people try out a few
+listings.
+
+- **The server picks the ids.** A cookie with an id the server never handed out is
+  replaced with a fresh one. Ids are version 4 UUIDs: 122 random bits, too many to guess
+  someone else's.
+- **Reading creates nothing.** A visitor is created by their first listing, so crawlers
+  and people just looking leave no rows behind.
+- **The cookie can't be read by scripts** (`HttpOnly`), and is only sent over HTTPS in
+  production (`Secure`, set whenever the request came through the TLS ingress).
+
+### Cross-site request forgery
+
+Because the cookie is the credential, another site could try to make a visitor's browser
+add or delete listings with it. Three things stop that:
+- **Go's `http.CrossOriginProtection`** rejects `POST` and `DELETE` requests that browsers
+  mark as coming from another site (the `Sec-Fetch-Site` and `Origin` headers).
+- **`SameSite=Lax` on the cookie**: browsers don't send it with requests from other
+  sites, except for plain link clicks.
+- **JSON-only bodies**: an HTML form on another site can't send `application/json`.
+
+### Limits count additions, under one lock
+
+Each listing costs a request to Photon, a free public geocoder, plus routing work on our
+small server. So additions are capped:
+- **Per visitor:** 10 an hour and 30 a day.
+- **Site-wide:** 300 a day. Clearing cookies gets around the per-visitor limits, but not
+  this one, so Photon never sees more than 300 new addresses a day from us.
+
+How the limits are counted:
+- **In Postgres, not in memory.** Counts stay right with any number of API replicas and
+  across restarts.
+- **Additions, not listings.** Each one is logged in a `submissions` table, so deleting a
+  listing doesn't give its slot back.
+- **Rolling windows.** "A day" is the last 24 hours, which needs no time zone and has no
+  rush at midnight.
+- **One lock.** Counting and recording happen under a transaction-scoped advisory lock.
+  Without it, two simultaneous requests could both see 9 of 10 used and both go through.
+  One lock for everyone is fine at a few hundred additions a day. A test fires 10
+  simultaneous additions at a limit of 3 and expects exactly 3 to succeed.
+
+A refused addition gets `429 Too Many Requests` with a `Retry-After` header saying when
+the oldest counted addition leaves its window.
+
+### Listings come in through a Source
+
+The spec rules out scraping listing sites such as ImmoScout24 or Kleinanzeigen, which their
+terms forbid. Listings are typed in by hand, through a `Source` interface: a source turns
+a submission into a checked draft, and each stored listing records which source it came
+from. The add-listing form is the only one. A new input that is allowed, say a partner API,
+would be a new `Source`, with nothing downstream changing.
+
+The optional link to the original advert is stored and shown, never fetched. Only
+`http` and `https` links are accepted, so a link can't run script when clicked.
 
 ### The region lives in config, not code
 
