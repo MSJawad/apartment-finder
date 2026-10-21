@@ -106,7 +106,7 @@ func migrate(ctx context.Context, pool *pgxpool.Pool, fsys fs.FS, logger *slog.L
 		if err != nil {
 			return fmt.Errorf("apply migration %s: %w", m.version, err)
 		}
-		logger.LogAttrs(ctx, slog.LevelInfo, "applied migration", slog.String("version", m.version))
+		logger.LogAttrs(ctx, slog.LevelInfo, "applied migration", slog.String("migration", m.version))
 	}
 	return nil
 }
