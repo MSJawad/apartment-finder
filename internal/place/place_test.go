@@ -55,8 +55,9 @@ func TestParse(t *testing.T) {
 
 func TestCriteria(t *testing.T) {
 	t.Parallel()
-	got := place.Criteria([]place.Place{{ID: 7, Name: "Work"}})
-	if len(got) != 1 || got[0].Key != "place:7" || got[0].Label != "Work" || got[0].Best != 10 || got[0].Worst != 45 || got[0].Weight != 3 {
+	got := place.Criteria([]place.Place{{ID: 7, Name: "Work", Mode: region.Bike}})
+	if len(got) != 1 || got[0].Key != "place:7" || got[0].Label != "Work" || got[0].Unit != "min by bike" ||
+		got[0].Best != 10 || got[0].Worst != 45 || got[0].Weight != 3 {
 		t.Errorf("Criteria() = %+v", got)
 	}
 }

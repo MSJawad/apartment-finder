@@ -50,6 +50,9 @@ func TestBoundaryContains(t *testing.T) {
 			t.Errorf("%s: Contains(%v, %v) = %v, want %v", tt.name, tt.lat, tt.lon, got, tt.want)
 		}
 	}
+	if outline := b.Outline(); len(outline) != 2 || len(outline[0]) != 4 || len(outline[1]) != 3 {
+		t.Errorf("Outline() = %v, want the square and the island without the hole", outline)
+	}
 	if got, want := b.BBox(), [4]float64{0, 0, 21, 21}; got != want {
 		t.Errorf("BBox() = %v, want %v (holes don't widen it)", got, want)
 	}

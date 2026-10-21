@@ -63,13 +63,13 @@ func Parse(data []byte) (Draft, error) {
 	d := Draft{Name: input.Text(in.Name), Address: input.Text(in.Address), Mode: region.Mode(in.Mode)}
 	errs := input.FieldErrors{}
 	if n := utf8.RuneCountInString(d.Name); n < 1 || n > 40 {
-		errs["name"] = "Name the place, e.g. \"Work\", in up to 40 characters."
+		errs["name"] = "Name the place, e.g. “Work”, in up to 40 characters."
 	}
 	if n := utf8.RuneCountInString(d.Address); n < 3 || n > 200 {
-		errs["address"] = "Enter the address, e.g. \"Nordhäuser Straße 63, Erfurt\"."
+		errs["address"] = "Enter the address, e.g. “Nordhäuser Straße 63, Erfurt”."
 	}
 	if d.Mode != region.Walk && d.Mode != region.Bike {
-		errs["mode"] = `Choose "walk" or "bike".`
+		errs["mode"] = "Choose “walk” or “bike”."
 	}
 	if len(errs) > 0 {
 		return Draft{}, errs
@@ -105,7 +105,7 @@ func Criteria(places []Place) []scoring.Criterion {
 	criteria := make([]scoring.Criterion, len(places))
 	for i, p := range places {
 		criteria[i] = scoring.Criterion{
-			Key: CriterionKey(p.ID), Label: p.Name, Unit: "min",
+			Key: CriterionKey(p.ID), Label: p.Name, Unit: p.Mode.Unit(),
 			Best: BestMinutes, Worst: WorstMinutes, Weight: DefaultWeight,
 		}
 	}

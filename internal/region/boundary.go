@@ -130,6 +130,18 @@ func (rg ring) contains(x, y float64) bool {
 	return inside
 }
 
+// Outline returns the outer rings as lon, lat pairs. Holes are left out:
+// they only matter for deciding what's inside.
+func (b *Boundary) Outline() [][][2]float64 {
+	var rings [][][2]float64
+	for _, rg := range b.rings {
+		if !rg.hole {
+			rings = append(rings, rg.points)
+		}
+	}
+	return rings
+}
+
 // BBox returns the smallest box around the outer rings: min lon, min lat,
 // max lon, max lat.
 func (b *Boundary) BBox() [4]float64 {

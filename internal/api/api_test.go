@@ -357,7 +357,7 @@ func TestRegion(t *testing.T) {
 	resp := newBrowser(t, server).do(http.MethodGet, "/api/region", "", "")
 	var got regionJSON
 	decode(t, resp.body, &got)
-	if resp.status != http.StatusOK || got.Name != "Thuringia" || got.Map.Zoom != 13 {
+	if resp.status != http.StatusOK || got.Name != "Thuringia" || got.Map.Zoom != 13 || len(got.Outline) != 1 || len(got.Outline[0]) < 100 {
 		t.Errorf("region = %d %+v", resp.status, got)
 	}
 }
