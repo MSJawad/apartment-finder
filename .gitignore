@@ -6,3 +6,6 @@ coverage.out
 
 # Local environment overrides; never commit secrets
 .env
+
+# Downloaded extracts and prepared routing data
+/data/
