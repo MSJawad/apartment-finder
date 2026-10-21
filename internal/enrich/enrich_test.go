@@ -27,6 +27,10 @@ func (fakeGeocoder) Geocode(_ context.Context, address string) (geocode.Result, 
 	switch address {
 	case "Anger 1, Erfurt":
 		return geocode.Result{Found: true, Lat: lat, Lon: lon, Label: "Anger 1, 99084 Erfurt", Precision: "house"}, nil
+	case "Nordhäuser Straße 63, Erfurt": // ~1.3 km north
+		return geocode.Result{Found: true, Lat: lat + 0.012, Lon: lon, Label: "Universität Erfurt", Precision: "house"}, nil
+	case "Willy-Brandt-Platz 12, Erfurt": // ~560 m south
+		return geocode.Result{Found: true, Lat: lat - 0.005, Lon: lon, Label: "Erfurt Hbf", Precision: "house"}, nil
 	case "Photon is down":
 		return geocode.Result{}, errors.New("photon returned HTTP 502")
 	default:
@@ -36,25 +40,40 @@ func (fakeGeocoder) Geocode(_ context.Context, address string) (geocode.Result, 
 
 // fakeRouter takes a minute per 80 m walked or 250 m cycled, in a straight
 // line, unless overrides says otherwise for a destination (keyed by its
-// latitude offset from the listing); a negative override means no route.
+// latitude offset from the origin); a negative override means no route.
 type fakeRouter struct {
 	overrides map[string]float64
-	calls     map[region.Mode]int
+	calls     map[region.Mode]int // Table calls
+	toCalls   map[region.Mode]int // TableTo calls
+}
+
+func (f *fakeRouter) leg(mode region.Mode, from, to routing.Point) routing.Leg {
+	speed := map[region.Mode]float64{region.Walk: 80, region.Bike: 250}[mode]
+	metres := math.Abs(to.Lat-from.Lat) * 111_200
+	minutes := metres / speed
+	if override, ok := f.overrides[fmt.Sprintf("%.4f", to.Lat-from.Lat)]; ok {
+		minutes = override
+	}
+	if minutes < 0 {
+		return routing.Leg{}
+	}
+	return routing.Leg{Reachable: true, Minutes: minutes, DistanceM: metres}
 }
 
 func (f *fakeRouter) Table(_ context.Context, mode region.Mode, origin routing.Point, destinations []routing.Point) ([]routing.Leg, error) {
 	f.calls[mode]++
-	speed := map[region.Mode]float64{region.Walk: 80, region.Bike: 250}[mode]
 	legs := make([]routing.Leg, len(destinations))
 	for i, d := range destinations {
-		metres := math.Abs(d.Lat-origin.Lat) * 111_200
-		minutes := metres / speed
-		if override, ok := f.overrides[fmt.Sprintf("%.4f", d.Lat-origin.Lat)]; ok {
-			minutes = override
-		}
-		if minutes >= 0 {
-			legs[i] = routing.Leg{Reachable: true, Minutes: minutes, DistanceM: metres}
-		}
+		legs[i] = f.leg(mode, origin, d)
+	}
+	return legs, nil
+}
+
+func (f *fakeRouter) TableTo(_ context.Context, mode region.Mode, origins []routing.Point, destination routing.Point) ([]routing.Leg, error) {
+	f.toCalls[mode]++
+	legs := make([]routing.Leg, len(origins))
+	for i, o := range origins {
+		legs[i] = f.leg(mode, o, destination)
 	}
 	return legs, nil
 }
@@ -87,6 +106,7 @@ func setup(t *testing.T) (*pgxpool.Pool, *Enricher, *fakeRouter) {
 	router := &fakeRouter{
 		overrides: map[string]float64{"0.0009": 10, "0.0027": 4, "0.0090": -1},
 		calls:     map[region.Mode]int{},
+		toCalls:   map[region.Mode]int{},
 	}
 	return pool, &Enricher{
 		Pool: pool, Region: reg, Geocoder: fakeGeocoder{}, Router: router,
