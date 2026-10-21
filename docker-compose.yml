@@ -6,7 +6,9 @@ x-osrm-image: &osrm-image ghcr.io/project-osrm/osrm-backend:v6.0.0@sha256:729461
 services:
   db:
     build: deploy/postgis
-    image: apartment-finder-postgis
+    # The same tag the integration tests build, so whichever builds first, the
+    # other reuses it instead of storing a second copy. `up --build` rebuilds.
+    image: apartment-finder-postgis:local
     environment:
       POSTGRES_PASSWORD: dev # local only; the port is bound to localhost
     ports: ["127.0.0.1:5432:5432"]

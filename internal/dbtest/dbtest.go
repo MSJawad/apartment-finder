@@ -94,7 +94,7 @@ func start() {
 	// name so runs don't each leave a new tag behind.
 	ctr, err := postgres.Run(ctx, "",
 		testcontainers.WithDockerfile(testcontainers.FromDockerfile{
-			Context: dockerDir, Repo: "apartment-finder-postgis", Tag: "test", KeepImage: true,
+			Context: dockerDir, Repo: "apartment-finder-postgis", Tag: "local", KeepImage: true,
 		}),
 		postgres.BasicWaitStrategies(),
 	)
