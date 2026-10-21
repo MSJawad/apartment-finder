@@ -1,0 +1,37 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_type": "W",
+        "osm_id": 17200177,
+        "osm_key": "amenity",
+        "osm_value": "university",
+        "type": "house",
+        "housenumber": "63",
+        "name": "Universit\u00e4t Erfurt",
+        "street": "Nordh\u00e4user Stra\u00dfe",
+        "district": "Andreasvorstadt",
+        "city": "Erfurt",
+        "state": "Th\u00fcringen",
+        "country": "Deutschland",
+        "postcode": "99089",
+        "countrycode": "DE",
+        "extent": [
+          11.0038567,
+          50.9933168,
+          11.0130867,
+          50.9883428
+        ]
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          11.0095474,
+          50.9909272
+        ]
+      }
+    }
+  ]
+}

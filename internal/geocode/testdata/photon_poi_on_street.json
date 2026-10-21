@@ -1,0 +1,37 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_type": "W",
+        "osm_id": 194148372,
+        "osm_key": "railway",
+        "osm_value": "tram",
+        "type": "house",
+        "name": "Magdeburger Allee",
+        "street": "Magdeburger Allee",
+        "locality": "Jacobsenviertel",
+        "district": "Ilversgehofen",
+        "city": "Erfurt",
+        "state": "Th\u00fcringen",
+        "country": "Deutschland",
+        "postcode": "99086",
+        "countrycode": "DE",
+        "extent": [
+          11.0267411,
+          50.9989168,
+          11.0269082,
+          50.9984213
+        ]
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          11.0268265,
+          50.9986684
+        ]
+      }
+    }
+  ]
+}

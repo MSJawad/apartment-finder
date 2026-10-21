@@ -1,0 +1,35 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "osm_type": "W",
+        "osm_id": 360937291,
+        "osm_key": "highway",
+        "osm_value": "primary",
+        "type": "street",
+        "name": "Erfurter Stra\u00dfe",
+        "district": "Weimar-West",
+        "city": "Weimar",
+        "state": "Th\u00fcringen",
+        "country": "Deutschland",
+        "postcode": "99428",
+        "countrycode": "DE",
+        "extent": [
+          11.2884069,
+          50.9779566,
+          11.2895731,
+          50.977473
+        ]
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          11.288978,
+          50.9777435
+        ]
+      }
+    }
+  ]
+}

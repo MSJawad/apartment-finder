@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -49,6 +50,42 @@ func (p *Photon) Geocode(ctx context.Context, address string) (Result, error) {
 	if query == "" {
 		return Result{}, errors.New("geocode: empty address")
 	}
+	if !houseNumber.MatchString(query) {
+		// Without a house number, the person means a street. Asked for
+		// buildings too, Photon can prefer a landmark on or named after it,
+		// such as a tram stop at its far end. So streets are searched first,
+		// and a street only counts if the address names it: otherwise
+		// "Erfurt" alone matches an "Erfurter Straße" in another town.
+		street, name, err := p.search(ctx, query, "street")
+		if err != nil {
+			return Result{}, err
+		}
+		if street.Found && strings.Contains(spellOut(query), spellOut(name)) {
+			return street, nil
+		}
+		// Not a street, so perhaps a landmark such as "Universität Erfurt".
+	}
+	result, _, err := p.search(ctx, query, "house", "street")
+	return result, err
+}
+
+// houseNumber matches a house number such as "1", "10a" or "1-3", but not a
+// five-digit postcode.
+var houseNumber = regexp.MustCompile(`(^|[\s,])\d{1,4}\s?[a-z]?([-/]\d{1,4}[a-z]?)?($|[\s,])`)
+
+// spellOut writes the usual abbreviations of "straße" in full, so
+// "Johannesstr." names the street "Johannesstraße".
+func spellOut(s string) string {
+	s = strings.ToLower(s)
+	for _, short := range []string{"strasse", "str."} {
+		s = strings.ReplaceAll(s, short, "straße")
+	}
+	return s
+}
+
+// search asks Photon for the best match in the given layers and returns it
+// with the matched feature's name.
+func (p *Photon) search(ctx context.Context, query string, layers ...string) (Result, string, error) {
 	bbox := make([]string, len(p.region.BBox))
 	for i, v := range p.region.BBox {
 		bbox[i] = strconv.FormatFloat(v, 'f', -1, 64)
@@ -57,31 +94,31 @@ func (p *Photon) Geocode(ctx context.Context, address string) (Result, error) {
 		"q":     {query},
 		"limit": {"1"},
 		"lang":  {p.region.Language},
-		// Only buildings and streets: a district or city match would put
-		// the listing at the city center.
-		"layer": {"house", "street"},
+		// Never districts or cities: those would put the listing at the
+		// city center.
+		"layer": layers,
 		"bbox":  {strings.Join(bbox, ",")},
 	}
 	// Encode sorts the parameters, so the same query always gives the same
 	// URL, and so the same cache entry.
 	body, err := p.client.Get(ctx, p.baseURL+"/api?"+params.Encode(), isMiss)
 	if err != nil {
-		return Result{}, err
+		return Result{}, "", err
 	}
 
 	resp, err := parse(body)
 	if err != nil {
-		return Result{}, err
+		return Result{}, "", err
 	}
 	if len(resp.Features) == 0 {
-		return Result{}, nil
+		return Result{}, "", nil
 	}
 	f := resp.Features[0]
 	lon, lat := f.Geometry.Coordinates[0], f.Geometry.Coordinates[1]
 	if !p.region.Contains(lat, lon) {
-		return Result{}, nil
+		return Result{}, "", nil
 	}
-	return Result{Found: true, Lat: lat, Lon: lon, Label: f.Properties.label(), Precision: f.Properties.Type}, nil
+	return Result{Found: true, Lat: lat, Lon: lon, Label: f.Properties.label(), Precision: f.Properties.Type}, f.Properties.Name, nil
 }
 
 // normalize trims and lowercases address and collapses its whitespace, so
