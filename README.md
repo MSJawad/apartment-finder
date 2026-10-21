@@ -37,15 +37,26 @@ curl 'localhost:5001/route/v1/foot/11.0357,50.9774;11.0377,50.9728'  # walk (bik
 go run ./cmd/import-amenities data/osm/region.osm.pbf
 
 go run ./cmd/api             # public on :8080, admin on :9090
-go run ./cmd/worker          # admin on :9090, so run one at a time or set ADMIN_ADDR
+OSRM_WALK_URL=http://localhost:5001 OSRM_BIKE_URL=http://localhost:5002 ADMIN_ADDR=:9091 \
+  go run ./cmd/worker        # admin on :9091, beside the api's
+curl -X POST localhost:8080/api/listings -H 'Content-Type: application/json' \
+  -d '{"address": "Anger 50, Erfurt", "warm_rent_eur": 820, "size_m2": 61, "rooms": 2}'
+curl localhost:8080/api/listings  # scored within a few seconds
 curl localhost:9090/metrics  # Prometheus metrics
 docker build -t apartment-finder .
 ```
 
-Configuration comes from environment variables: `DATABASE_URL` and `REGION_CONFIG`
-(required), `ADDR`
-(default `:8080`), `ADMIN_ADDR` (default `:9090`) and `LOG_LEVEL` (`debug`, `info`, `warn`
-or `error`; default `info`).
+Configuration comes from environment variables:
+
+| Variable | Default | |
+| --- | --- | --- |
+| `DATABASE_URL` | required | PostgreSQL connection string |
+| `REGION_CONFIG` | required | the region file, e.g. `config/thuringia.json` |
+| `OSRM_WALK_URL`, `OSRM_BIKE_URL` | required by the worker | the routers, `http://localhost:5001` and `:5002` with compose |
+| `PHOTON_URL` | `https://photon.komoot.io` | the geocoder |
+| `ADDR` | `:8080` | the API's public address |
+| `ADMIN_ADDR` | `:9090` | probes and metrics |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 
 ## API
 
@@ -54,8 +65,8 @@ JSON over HTTP. A visitor is identified by a cookie that the first `POST` sets; 
 
 | Request | What it does |
 | --- | --- |
-| `GET /api/region` | The region's name, bounding box and where the map opens |
-| `GET /api/listings` | The example listings and your own, ranked, with each score's breakdown and the criteria |
+| `GET /api/region` | The region's name, the box around its boundary, and where the map opens |
+| `GET /api/listings` | The example listings and your own, ranked, with each score's breakdown and the criteria. The examples come from the region config, on streets without house numbers, so none points at a real home |
 | `GET /api/listings?weight.<criterion>=<0-10>` | The same, with your weights, e.g. `weight.rent_per_m2=5&weight.category:gym=0` |
 | `POST /api/listings` | Add a listing: `address`, `warm_rent_eur`, `size_m2`, `rooms`, and optionally `source_url`. Answers `202 Accepted` with the listing, still `pending` |
 | `GET /api/listings/{id}` | One listing, with the same `weight.` parameters |
@@ -252,6 +263,9 @@ listings.
   someone else's.
 - **Reading creates nothing.** A visitor is created by their first listing, so crawlers
   and people just looking leave no rows behind.
+- **Kept for 30 days after the last visit.** Then the worker's hourly clean-up deletes the
+  visitor with their listings and places. People may type in their own address, so
+  little is kept, and not for long.
 - **The cookie can't be read by scripts** (`HttpOnly`), and is only sent over HTTPS in
   production (`Secure`, set whenever the request came through the TLS ingress).
 
@@ -324,12 +338,13 @@ The optional link to the original advert is stored and shown, never fetched. Onl
 ### The region lives in config, not code
 
 `config/thuringia.json` holds everything specific to a place:
-- the covered area and where the map opens
+- the covered area, as a boundary file, and where the map opens
 - the language addresses are shown in
 - the OpenStreetMap extract to route on
 - the thresholds and default weights for rent, size and rooms
 - the everyday categories (supermarket, transit stop, pharmacy, doctor, park, train
   station, gym), each with its OSM tags, travel mode, thresholds and weight
+- the example listings every visitor sees
 
 Covering another city means writing another file. The file is validated strictly at
 startup:
@@ -340,6 +355,21 @@ startup:
 Search radii aren't configured. They follow from each category's worst time: if a
 20-minute walk already scores 0, there's no point looking further than 20 minutes' walk in
 a straight line.
+
+### The region is its exact outline, not a rectangle
+
+"Is this address in the region?" decides whether a listing can be scored at all, since
+the routing and amenity data only cover the region. The first version checked a
+rectangle around Thuringia. Testing broke it: limited to that rectangle, the geocoder
+fuzzy-matched "Alexanderplatz 1, Berlin" to "Kleiner Berlin 1" in Halle. Halle is inside
+the rectangle but in Saxony-Anhalt, so the listing got a score from data that doesn't
+cover it.
+
+Now the region is the polygon Geofabrik publishes with each extract
+(`config/thuringia.poly`, © OpenStreetMap contributors, ODbL), the same line the map
+data was cut along. A point-in-polygon test decides what's inside, and the rectangle the
+geocoder searches is derived from the polygon, so the two can't disagree. Halle and
+Leipzig are now outside, and Eisenach, right at the western border, is inside.
 
 ### Every upstream response is cached, misses included
 
@@ -355,17 +385,25 @@ Requests to each service are spaced out by a rate limiter and carry a User-Agent
 this app, as their usage policies ask. The limiter runs within one process, and the
 worker runs as a single replica, so that limit holds for the whole deployment.
 
-### Geocoding only accepts house or street matches, and shows what it matched
+### Geocoding: streets first without a house number, and the match is shown
 
 Photon is asked only for buildings and streets, never districts or cities. Otherwise
-"Erfurt" would quietly place the listing at the city center and score that. German
-listings often leave out the house number, so street-level matches are accepted.
+"Erfurt" would quietly place the listing at the city center and score that.
 
-That isn't enough on its own: a bare "Erfurt" still matches a building, the main
-station. So each listing stores and shows the address it was matched to, and whether it
-matched a house or only a street. A wrong match is visible to the user instead of
-silently scored. Matches outside the region count as not found, because there's no
-routing data there.
+German listings often leave out the house number, and then the person means the street.
+Asked for buildings and streets together, Photon can prefer a landmark on the street or
+named after it. Testing turned up three: "Magdeburger Allee" matched a tram line at its
+far end, "Gothaer Straße" the trade fair grounds, and "Nordhäuser Straße" the university,
+1.5 km from where Photon puts the street itself. So an address without a house number is
+looked up among streets first. A street only counts if the address names it, since
+Photon matches loosely: "Erfurt" on its own finds an "Erfurter Straße" near Weimar. When
+no street matches, buildings and landmarks are searched, so "Universität Erfurt" still
+works.
+
+Even then a match can be wrong. A bare "Erfurt" ends up at the main station. So each
+listing stores and shows the address it was matched to, and whether it matched a house
+or only a street. A wrong match is visible to the user instead of silently scored.
+Matches outside the region count as not found, because there's no routing data there.
 
 ### Amenities come from our own import, not the Overpass API
 
