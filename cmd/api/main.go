@@ -1,4 +1,4 @@
-// Command api serves the public HTTP API and web page.
+// Command api serves the page and the public JSON API it uses.
 package main
 
 import (
@@ -18,6 +18,7 @@ import (
 	"github.com/MSJawad/apartment-finder/internal/region"
 	"github.com/MSJawad/apartment-finder/internal/server"
 	"github.com/MSJawad/apartment-finder/internal/visitor"
+	"github.com/MSJawad/apartment-finder/internal/web"
 )
 
 // version is the git commit this binary was built from, set with
@@ -74,6 +75,9 @@ func run() error {
 		Logger:   logger,
 	}
 	a.Register(public)
+	if err := web.Register(public); err != nil {
+		return err
+	}
 
 	return server.Serve(ctx, logger,
 		server.NewServer(cfg.Addr, server.Observe(public, metrics, logger), logger),
