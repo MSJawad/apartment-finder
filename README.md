@@ -191,3 +191,49 @@ score with half the criteria missing doesn't pass for a complete one. "There's n
 nearby" is different: it's a measurement and scores 0.
 
 Every line of the scoring package is covered by tests, and CI enforces it.
+
+### The region lives in config, not code
+
+`config/thuringia.json` holds everything specific to a place:
+- the covered area and where the map opens
+- the language addresses are shown in
+- the OpenStreetMap extract to route on
+- the thresholds and default weights for rent, size and rooms
+- the everyday categories (supermarket, transit stop, pharmacy, doctor, park, train
+  station, gym), each with its OSM tags, travel mode, thresholds and weight
+
+Covering another city means writing another file. The file is validated strictly at
+startup:
+- unknown fields are errors, so a typo can't be silently ignored
+- each threshold must point the right way, so a config with "best" and "worst" swapped
+  fails instead of quietly inverting a score
+
+Search radii aren't configured. They follow from each category's worst time: if a
+20-minute walk already scores 0, there's no point looking further than 20 minutes' walk in
+a straight line.
+
+### Every upstream response is cached, misses included
+
+Photon and other public OpenStreetMap services run on donated capacity and ask clients to
+be gentle. Every response is stored in Postgres, keyed by the request URL:
+- answers are kept for 90 days, since addresses rarely move
+- "nothing found" answers are kept too, for a shorter time, so a typo isn't sent again
+  every time a job retries
+- errors such as 429 or 502 are never cached; the job fails and the queue retries it later
+  with backoff
+
+Requests to each service are spaced out by a rate limiter and carry a User-Agent naming
+this app, as their usage policies ask. The limiter runs within one process, and the
+worker runs as a single replica, so that limit holds for the whole deployment.
+
+### Geocoding only accepts house or street matches, and shows what it matched
+
+Photon is asked only for buildings and streets, never districts or cities. Otherwise
+"Erfurt" would quietly place the listing at the city center and score that. German
+listings often leave out the house number, so street-level matches are accepted.
+
+That isn't enough on its own: a bare "Erfurt" still matches a building, the main
+station. So each listing stores and shows the address it was matched to, and whether it
+matched a house or only a street. A wrong match is visible to the user instead of
+silently scored. Matches outside the region count as not found, because there's no
+routing data there.
