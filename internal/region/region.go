@@ -62,6 +62,18 @@ type Region struct {
 		Rooms     Threshold `json:"rooms"`
 	} `json:"listing"`
 	Categories []Category `json:"categories"`
+	// Examples are listings every visitor sees, so a first visit doesn't
+	// open on an empty page.
+	Examples []Example `json:"examples"`
+}
+
+// Example is a made-up listing. Its address is a street without a house
+// number, so no example points at someone's actual home.
+type Example struct {
+	Address     string  `json:"address"`
+	WarmRentEUR float64 `json:"warm_rent_eur"`
+	SizeM2      float64 `json:"size_m2"`
+	Rooms       float64 `json:"rooms"`
 }
 
 // Threshold is how a listing attribute scores; see scoring.Criterion.
@@ -151,6 +163,16 @@ func (r *Region) Validate() error {
 		if err := c.validate(); err != nil {
 			return err
 		}
+	}
+	addresses := map[string]bool{}
+	for _, e := range r.Examples {
+		switch {
+		case e.Address == "" || addresses[e.Address]:
+			return fmt.Errorf("example %q: addresses must be set and different", e.Address)
+		case e.WarmRentEUR <= 0 || e.SizeM2 <= 0 || e.Rooms <= 0:
+			return fmt.Errorf("example %q: rent, size and rooms must be above 0", e.Address)
+		}
+		addresses[e.Address] = true
 	}
 	// Catches duplicate category keys, negative weights and non-numbers.
 	return scoring.Validate(r.Criteria())

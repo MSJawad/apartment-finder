@@ -75,6 +75,16 @@ func TestParseRejectsBadConfigs(t *testing.T) {
 			cats := r["categories"].([]any)
 			r["categories"] = append(cats, cats[0])
 		}, "appears twice"},
+		{"example without address", func(r map[string]any) {
+			r["examples"] = []any{map[string]any{"address": "", "warm_rent_eur": 700, "size_m2": 50, "rooms": 2}}
+		}, "addresses must be set"},
+		{"duplicate example", func(r map[string]any) {
+			e := map[string]any{"address": "Anger, Erfurt", "warm_rent_eur": 700, "size_m2": 50, "rooms": 2}
+			r["examples"] = []any{e, e}
+		}, "addresses must be set and different"},
+		{"example without rent", func(r map[string]any) {
+			r["examples"] = []any{map[string]any{"address": "Anger, Erfurt", "size_m2": 50, "rooms": 2}}
+		}, "above 0"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
