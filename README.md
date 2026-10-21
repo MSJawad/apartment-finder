@@ -237,3 +237,32 @@ station. So each listing stores and shows the address it was matched to, and whe
 matched a house or only a street. A wrong match is visible to the user instead of
 silently scored. Matches outside the region count as not found, because there's no
 routing data there.
+
+### Amenities come from our own import, not the Overpass API
+
+The original plan was to look up nearby amenities with the public Overpass API, the
+standard way to query OpenStreetMap. Testing it changed the plan:
+- **The public server pushed back.** It answered "at capacity", and its error page says
+  the public endpoint is meant for browser-based, human-operated tools, and that
+  automated use should run its own instance.
+- **The wiki caps automated use.** The OpenStreetMap wiki asks regular automated users to
+  stay around 1/100 of the one-off limits, about 100 queries a day.
+
+A backend worker calling it for every new listing doesn't fit either.
+
+So the places are imported instead:
+- **Same source data.** The worker already needs the region's OpenStreetMap extract for
+  routing. The extract is filtered down to the seven categories and loaded into an
+  `amenities` table in PostGIS, where a weekly job refreshes it.
+- **One indexed query.** "The five nearest supermarkets" becomes a single query: the GiST
+  index answers `ORDER BY geom <-> point` (nearest-neighbour search) without scanning the
+  table.
+- **Areas measure from their edge.** A park is stored as its polygon, so distance counts
+  from its nearest edge rather than its middle, and routes go to that edge.
+
+The trade-offs:
+- **Data age.** The data is as old as the last import, at most a week, which is fine for
+  supermarkets and parks.
+- **Upkeep.** Keeping the import running is now our job.
+- **Safety.** A refresh swaps the whole table in one transaction, and an empty import is
+  refused rather than wiping every amenity.
