@@ -35,6 +35,12 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test -race ./...
+      - name: Check every line of the scoring package is tested
+        # The score is what users see; untested scoring code fails the build.
+        run: |
+          go test -coverprofile=scoring.out ./internal/scoring
+          go tool cover -func=scoring.out | tail -1
+          go tool cover -func=scoring.out | tail -1 | grep -q '100.0%'
 
   image:
     needs: [lint, test]
