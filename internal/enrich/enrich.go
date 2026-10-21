@@ -1,7 +1,10 @@
-// Package enrich measures a listing: where it is, which everyday places are
-// nearest, and how long it takes to walk or cycle to them. The results are
-// stored as one measurement per scoring criterion; scoring itself happens
-// when listings are read, so changing weights never needs a re-measure.
+// Package enrich measures listings and personal places: where they are,
+// which everyday places are nearest a listing, and how long it takes to walk
+// or cycle to them and to the visitor's own places. The results are stored
+// as measurements; scoring itself happens when listings are read, so
+// changing weights never needs a re-measure.
+//
+// Every job that calls the geocoder or the routers lives here.
 package enrich
 
 import (
@@ -48,6 +51,7 @@ type Geocoder interface {
 // Router calculates travel times; *routing.OSRM is one.
 type Router interface {
 	Table(ctx context.Context, mode region.Mode, origin routing.Point, destinations []routing.Point) ([]routing.Leg, error)
+	TableTo(ctx context.Context, mode region.Mode, origins []routing.Point, destination routing.Point) ([]routing.Leg, error)
 }
 
 // Enricher handles enrich jobs.
@@ -122,7 +126,10 @@ func (e *Enricher) enrich(ctx context.Context, listingID int64) error {
 		return err
 	}
 	measurements = append(measurements, travel...)
-	return e.save(ctx, listingID, place, measurements)
+	if err := e.save(ctx, listingID, place, measurements); err != nil {
+		return err
+	}
+	return e.measurePlacesFrom(ctx, listingID)
 }
 
 // travelTimes measures each category: the fastest trip to one of its nearest
