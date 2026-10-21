@@ -1,0 +1,21 @@
+version: "2"
+
+linters:
+  # errcheck, govet, ineffassign, staticcheck, unused
+  default: standard
+  enable:
+    - bodyclose # HTTP response bodies are closed (upstream clients)
+    - errorlint # errors are compared with errors.Is/As, so wrapping is safe
+    - gosec # security footguns, e.g. HTTP servers without timeouts
+    - misspell
+    - noctx # outbound requests carry a context, so they can be cancelled
+    - sloglint # consistent structured logging
+  settings:
+    sloglint:
+      # Loggers are passed in explicitly, never taken from slog's global.
+      no-global: all
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
