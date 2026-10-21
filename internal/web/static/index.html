@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Apartment Finder</title>
+  <meta name="description" content="Score apartment listings by rent, size and the walk or ride to the places you go every day.">
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/vendor/leaflet/leaflet.js" defer></script>
+  <script src="/static/app.js" type="module"></script>
+</head>
+<body>
+  <div class="layout">
+    <main class="panel">
+      <header class="masthead">
+        <h1>Apartment Finder</h1>
+        <p class="lede">Scores apartments in <span id="region-name">the region</span> from 0 to 100 on rent, size,
+          and how long it takes to walk or cycle to the places you go every day.</p>
+      </header>
+
+      <div class="banner" id="banner" role="alert" hidden></div>
+      <p class="visually-hidden" id="status" role="status" aria-live="polite"></p>
+
+      <section class="card" aria-labelledby="add-title">
+        <h2 id="add-title">Add a listing</h2>
+        <form id="add-listing" novalidate>
+          <div class="field">
+            <label for="listing-address">Address</label>
+            <input id="listing-address" name="address" autocomplete="off" placeholder="Johannesstraße 10, Erfurt" aria-describedby="listing-address-error">
+            <p class="error" id="listing-address-error"></p>
+          </div>
+          <div class="fields-3">
+            <div class="field">
+              <label for="listing-warm_rent_eur">Warm rent</label>
+              <div class="with-unit">
+                <input id="listing-warm_rent_eur" name="warm_rent_eur" type="number" inputmode="decimal" min="50" max="10000" step="any" placeholder="850" aria-describedby="listing-warm_rent_eur-error">
+                <span aria-hidden="true">€</span>
+              </div>
+              <p class="error" id="listing-warm_rent_eur-error"></p>
+            </div>
+            <div class="field">
+              <label for="listing-size_m2">Size</label>
+              <div class="with-unit">
+                <input id="listing-size_m2" name="size_m2" type="number" inputmode="decimal" min="5" max="1000" step="any" placeholder="62" aria-describedby="listing-size_m2-error">
+                <span aria-hidden="true">m²</span>
+              </div>
+              <p class="error" id="listing-size_m2-error"></p>
+            </div>
+            <div class="field">
+              <label for="listing-rooms">Rooms</label>
+              <input id="listing-rooms" name="rooms" type="number" inputmode="decimal" min="1" max="20" step="0.5" placeholder="2.5" aria-describedby="listing-rooms-error">
+              <p class="error" id="listing-rooms-error"></p>
+            </div>
+          </div>
+          <div class="field">
+            <label for="listing-source_url">Link to the advert <span class="optional">optional</span></label>
+            <input id="listing-source_url" name="source_url" type="url" inputmode="url" autocomplete="off" placeholder="https://" aria-describedby="listing-source_url-error">
+            <p class="error" id="listing-source_url-error"></p>
+          </div>
+          <button type="submit" class="primary">Add and score</button>
+        </form>
+      </section>
+
+      <section class="card" aria-labelledby="weights-title">
+        <details id="weights">
+          <summary><h2 id="weights-title">What matters to you</h2></summary>
+          <p class="hint">How much each criterion counts. Rankings and map colors update as you move them.</p>
+          <div id="sliders" class="sliders"></div>
+          <p class="error" id="weights-error"></p>
+          <button type="button" class="quiet" id="reset-weights">Reset to defaults</button>
+        </details>
+      </section>
+
+      <section class="ranking-section" aria-labelledby="ranking-title">
+        <h2 id="ranking-title">Ranking</h2>
+        <table class="ranking">
+          <thead>
+            <tr><th scope="col">#</th><th scope="col">Score</th><th scope="col">Listing</th></tr>
+          </thead>
+          <tbody id="listings"></tbody>
+        </table>
+      </section>
+
+      <section class="card" aria-labelledby="places-title">
+        <h2 id="places-title">Your places</h2>
+        <p class="hint">Add where you go often, like work or a university. Every listing then also scores on the trip there.</p>
+        <ul class="places" id="places"></ul>
+        <form id="add-place" novalidate>
+          <div class="fields-2">
+            <div class="field">
+              <label for="place-name">Name</label>
+              <input id="place-name" name="name" autocomplete="off" placeholder="Work" maxlength="40" aria-describedby="place-name-error">
+              <p class="error" id="place-name-error"></p>
+            </div>
+            <div class="field">
+              <label for="place-mode">Getting there</label>
+              <select id="place-mode" name="mode" aria-describedby="place-mode-error">
+                <option value="bike">By bike</option>
+                <option value="walk">On foot</option>
+              </select>
+              <p class="error" id="place-mode-error"></p>
+            </div>
+          </div>
+          <div class="field">
+            <label for="place-address">Address</label>
+            <input id="place-address" name="address" autocomplete="off" placeholder="Nordhäuser Straße 63, Erfurt" aria-describedby="place-address-error">
+            <p class="error" id="place-address-error"></p>
+          </div>
+          <button type="submit" class="secondary">Add place</button>
+        </form>
+      </section>
+
+      <footer class="footer">
+        <p>Addresses are matched with <a href="https://photon.komoot.io" rel="noopener">Photon</a>, travel times come from
+          <a href="https://project-osrm.org" rel="noopener">OSRM</a>, and everyday places from
+          <a href="https://www.openstreetmap.org/copyright" rel="noopener">OpenStreetMap</a>.
+          Your listings and places are deleted after 30 days without a visit.</p>
+      </footer>
+    </main>
+
+    <div class="map" id="map" role="region" aria-label="Map of listings and places"></div>
+  </div>
+</body>
+</html>

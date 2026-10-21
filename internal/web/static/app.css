@@ -1,0 +1,316 @@
+/* Apartment Finder. Colors are tokens on :root, with a dark variant. */
+
+:root {
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f1f3f5;
+  --text: #1b1f24;
+  --muted: #5c6670;
+  --border: #dde1e6;
+  --accent: #2f5bd3;
+  --accent-text: #ffffff;
+  --accent-soft: #e8eefc;
+  --danger: #b42318;
+  --danger-soft: #fdecea;
+  --focus: #2f5bd3;
+  --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 1px 3px rgb(16 24 40 / 8%);
+  --radius: 10px;
+  --panel-width: 460px;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #111418;
+    --surface: #181c21;
+    --surface-2: #20252b;
+    --text: #e8eaed;
+    --muted: #a0a8b1;
+    --border: #2e353d;
+    --accent: #7b9cf5;
+    --accent-text: #0d1117;
+    --accent-soft: #1d2740;
+    --danger: #ff8a80;
+    --danger-soft: #3a1d1b;
+    --focus: #7b9cf5;
+    --shadow: none;
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2 { margin: 0; line-height: 1.2; }
+h1 { font-size: 1.5rem; letter-spacing: -0.01em; }
+h2 { font-size: 1.05rem; }
+a { color: var(--accent); }
+p { margin: 0; }
+
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap;
+}
+
+/* Layout: a scrolling panel beside a full-height map on wide screens; on
+   narrow ones the map stays pinned on top while the panel scrolls under it. */
+
+.layout { display: flex; min-height: 100%; }
+
+.panel {
+  width: var(--panel-width);
+  flex: none;
+  padding: 20px 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.map {
+  flex: 1;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  height: 100dvh;
+  z-index: 0;
+}
+
+@media (max-width: 899px) {
+  /* Whatever the browser scrolls into view (a focused field, a row) must
+     land below the pinned map, not behind it. */
+  html { scroll-padding-top: calc(40vh + 12px); scroll-padding-top: calc(40dvh + 12px); }
+  .layout { flex-direction: column; }
+  .panel { width: 100%; padding: 16px 16px 32px; }
+  .map {
+    order: -1;
+    flex: none;
+    height: 40vh;
+    height: 40dvh;
+    z-index: 2;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+/* Panel pieces */
+
+.masthead { display: grid; gap: 6px; }
+.lede { color: var(--muted); }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.hint { color: var(--muted); font-size: 0.875rem; }
+
+.banner {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-weight: 500;
+}
+
+.footer { color: var(--muted); font-size: 0.8125rem; }
+
+/* Forms */
+
+form { display: grid; gap: 12px; }
+.fields-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.fields-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.field { display: grid; gap: 4px; align-content: start; }
+
+label { font-size: 0.8125rem; font-weight: 600; }
+.optional { font-weight: 400; color: var(--muted); }
+
+input, select {
+  width: 100%;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  min-height: 40px;
+}
+input::placeholder { color: var(--muted); opacity: 0.7; }
+input[aria-invalid="true"], select[aria-invalid="true"] { border-color: var(--danger); }
+
+.with-unit { position: relative; }
+.with-unit input { padding-right: 34px; }
+.with-unit span {
+  position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+  color: var(--muted); font-size: 0.875rem; pointer-events: none;
+}
+
+.error { color: var(--danger); font-size: 0.8125rem; }
+.error:empty { display: none; }
+
+button {
+  font: inherit;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 9px 14px;
+  min-height: 40px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+button:disabled { opacity: 0.6; cursor: progress; }
+button.primary { background: var(--accent); color: var(--accent-text); }
+button.secondary { background: var(--accent-soft); color: var(--accent); }
+button.quiet {
+  background: none; color: var(--accent); padding: 4px 0; min-height: 0; justify-self: start;
+}
+button.delete {
+  background: none; color: var(--muted); font-weight: 500; font-size: 0.8125rem;
+  padding: 2px 6px; min-height: 0; border-color: var(--border);
+}
+button.delete.confirm { color: var(--danger); border-color: var(--danger); }
+
+/* Weights */
+
+details > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::after {
+  content: ""; width: 8px; height: 8px; margin-left: auto;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg); transition: transform 0.15s;
+}
+details[open] > summary::after { transform: rotate(-135deg); }
+details[open] > summary { margin-bottom: 8px; }
+details { display: grid; gap: 10px; }
+#weights[open] { gap: 12px; }
+
+.sliders { display: grid; gap: 10px; margin-top: 4px; }
+.slider { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; }
+.slider label { font-weight: 500; font-size: 0.875rem; overflow-wrap: anywhere; }
+.slider output { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 0.875rem; min-width: 1.5em; text-align: right; }
+.slider input { grid-column: 1 / -1; min-height: 0; padding: 0; border: 0; background: none; accent-color: var(--accent); }
+.slider-group { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin-top: 6px; }
+
+/* Ranking */
+
+.ranking-section { display: grid; gap: 10px; }
+.ranking { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+.ranking thead th {
+  text-align: left; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--muted); font-weight: 600; padding: 8px 10px; background: var(--surface-2);
+}
+.ranking td { padding: 10px; border-top: 1px solid var(--border); vertical-align: top; }
+.ranking .rank { width: 2.2em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ranking .score-cell { width: 4.2em; }
+.ranking tr.listing { cursor: pointer; }
+.ranking tr.listing:hover td, .ranking tr.listing.selected td { background: var(--accent-soft); }
+.ranking tr.details td { border-top: 0; padding-top: 0; }
+.ranking tr.listing.selected + tr.details td { background: var(--accent-soft); }
+
+.empty { color: var(--muted); text-align: center; padding: 24px 10px; }
+
+.listing-title {
+  all: unset; display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px;
+  font-weight: 600; cursor: pointer; overflow-wrap: anywhere;
+}
+.listing-title:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.meta { color: var(--muted); font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
+.matched { color: var(--muted); font-size: 0.8125rem; overflow-wrap: anywhere; }
+.detail { color: var(--danger); font-size: 0.8125rem; }
+.row-actions { display: flex; gap: 8px; align-items: center; margin-top: 6px; flex-wrap: wrap; }
+.row-actions a { font-size: 0.8125rem; }
+
+.tag {
+  display: inline-block; font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 1px 6px; border-radius: 999px; background: var(--surface-2); color: var(--muted);
+}
+
+/* A score badge, also used for map pins: the number on a color from red
+   (0) to green (100), so it reads without telling the colors apart. */
+.badge {
+  display: inline-grid; place-items: center;
+  min-width: 2.4em; height: 2.4em; padding: 0 4px; border-radius: 999px;
+  font-weight: 700; font-size: 0.875rem; font-variant-numeric: tabular-nums;
+}
+.status { font-size: 0.75rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.status.pending::before {
+  content: ""; display: inline-block; width: 0.8em; height: 0.8em; margin-right: 4px; vertical-align: -1px;
+  border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.status.problem { color: var(--danger); }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .status.pending::before { animation: none; } }
+
+.s0 { background: #b42318; color: #fff; }
+.s1 { background: #c4320a; color: #fff; }
+.s2 { background: #d9480f; color: #fff; }
+.s3 { background: #f76707; color: #1b1f24; }
+.s4 { background: #f59f00; color: #1b1f24; }
+.s5 { background: #fab005; color: #1b1f24; }
+.s6 { background: #c0d72d; color: #1b1f24; }
+.s7 { background: #82c91e; color: #1b1f24; }
+.s8 { background: #37b24d; color: #1b1f24; }
+.s9 { background: #2b8a3e; color: #fff; }
+.s10 { background: #1e6b31; color: #fff; }
+.unscored { background: var(--surface-2); color: var(--muted); }
+
+/* Breakdown */
+
+.breakdown { list-style: none; margin: 4px 0 2px; padding: 0; display: grid; gap: 8px; }
+.breakdown li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; font-size: 0.8125rem; }
+.breakdown .what { font-weight: 600; }
+.breakdown .points { color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.breakdown .value { grid-column: 1 / -1; color: var(--muted); overflow-wrap: anywhere; }
+.breakdown .bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; }
+.breakdown .bar span { display: block; height: 100%; width: 0; }
+.breakdown li.off { opacity: 0.55; }
+
+/* Places */
+
+.places { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.places:empty { display: none; }
+.places li {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+}
+.places .name { font-weight: 600; overflow-wrap: anywhere; }
+.places .sub { grid-column: 1; color: var(--muted); font-size: 0.8125rem; overflow-wrap: anywhere; }
+.places button { grid-row: 1 / span 2; grid-column: 2; }
+
+/* Map */
+
+.leaflet-container { font: inherit; background: #e5e3df; }
+
+.pin { display: grid; place-items: center; border-radius: 50%; box-shadow: 0 0 0 2px #fff, 0 1px 4px rgb(0 0 0 / 40%); }
+.pin span { font-weight: 700; font-size: 12px; font-variant-numeric: tabular-nums; }
+.pin.example { box-shadow: 0 0 0 2px #fff, 0 0 0 3px rgb(0 0 0 / 35%), 0 1px 4px rgb(0 0 0 / 40%); }
+.pin.selected { box-shadow: 0 0 0 3px #1b1f24, 0 0 0 5px #fff, 0 2px 6px rgb(0 0 0 / 45%); }
+
+.place-pin {
+  display: grid; place-items: center; border-radius: 6px; transform: rotate(45deg);
+  background: #1b1f24; box-shadow: 0 0 0 2px #fff, 0 1px 4px rgb(0 0 0 / 40%);
+}
+.place-pin span { width: 6px; height: 6px; background: #fff; border-radius: 50%; }
+
+.leaflet-tooltip.place-label {
+  font-weight: 600; font-size: 12px; padding: 2px 6px; border-radius: 4px;
+  background: #1b1f24; color: #fff; border: 0; box-shadow: none;
+}
+.leaflet-tooltip.place-label::before { border-top-color: #1b1f24; }
+
+.popup { display: grid; gap: 4px; min-width: 180px; }
+.popup strong { font-size: 0.9375rem; }
+.popup .meta { font-size: 0.8125rem; }

@@ -31,6 +31,9 @@ jobs:
         run: shellcheck scripts/*.sh
       - name: Check the compose file
         run: docker compose config -q
+      - name: Check the page script parses
+        # Node comes preinstalled on GitHub's Ubuntu runners.
+        run: node --check internal/web/static/app.js
 
   test:
     runs-on: ubuntu-24.04
