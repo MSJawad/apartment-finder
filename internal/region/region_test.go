@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 func TestLoadShippedConfig(t *testing.T) {
@@ -14,11 +15,27 @@ func TestLoadShippedConfig(t *testing.T) {
 	if got := len(r.Criteria()); got != 3+len(r.Categories) {
 		t.Errorf("%d criteria, want 3 listing attributes + %d categories", got, len(r.Categories))
 	}
-	if !r.Contains(50.9777, 11.0365) { // Erfurt, Anger
-		t.Error("Erfurt is outside the Thuringia bbox")
+	for _, tt := range []struct {
+		place    string
+		lat, lon float64
+		want     bool
+	}{
+		{"Erfurt, Anger", 50.9777, 11.0365, true},
+		{"Eisenach, near the western border", 50.9747, 10.3194, true},
+		{"Gera, in the east", 50.8806, 12.0817, true},
+		// Inside the box around Thuringia, but in neighbouring states.
+		{"Halle (Saale)", 51.4804, 11.9718, false},
+		{"Leipzig", 51.3397, 12.3731, false},
+		{"Hof, Bavaria", 50.3135, 11.9128, false},
+		{"Berlin", 52.52, 13.405, false},
+	} {
+		if got := r.Contains(tt.lat, tt.lon); got != tt.want {
+			t.Errorf("Contains(%s) = %v, want %v", tt.place, got, tt.want)
+		}
 	}
-	if r.Contains(52.52, 13.405) { // Berlin
-		t.Error("Berlin is inside the Thuringia bbox")
+	box := r.BBox
+	if !(box[0] > 9.8 && box[0] < 9.9 && box[1] > 50.1 && box[1] < 50.3 && box[2] > 12.6 && box[2] < 12.7 && box[3] > 51.6 && box[3] < 51.7) {
+		t.Errorf("BBox = %v, want the box around Thuringia", box)
 	}
 }
 
@@ -37,8 +54,10 @@ func TestParseRejectsBadConfigs(t *testing.T) {
 		{"unknown field", func(r map[string]any) { r["colour"] = "blue" }, "unknown field"},
 		{"no name", func(r map[string]any) { r["name"] = "" }, "name is missing"},
 		{"bad language", func(r map[string]any) { r["language"] = "German" }, "two-letter code"},
-		{"bbox corners swapped", func(r map[string]any) { r["bbox"] = []float64{12, 51, 10, 50} }, "bbox must be"},
-		{"map outside bbox", func(r map[string]any) { r["map"] = map[string]any{"lat": 52.5, "lon": 13.4, "zoom": 13} }, "map center"},
+		{"no boundary", func(r map[string]any) { r["boundary"] = "" }, "boundary is missing"},
+		{"boundary file missing", func(r map[string]any) { r["boundary"] = "nowhere.poly" }, "nowhere.poly"},
+		{"broken boundary", func(r map[string]any) { r["boundary"] = "broken.poly" }, "boundary:"},
+		{"map outside the boundary", func(r map[string]any) { r["map"] = map[string]any{"lat": 52.5, "lon": 13.4, "zoom": 13} }, "map center"},
 		{"map zoom", func(r map[string]any) { r["map"] = map[string]any{"lat": 51, "lon": 11, "zoom": 0} }, "zoom"},
 		{"no extract", func(r map[string]any) { r["osm_extract"] = "" }, "osm_extract"},
 		{"rent thresholds swapped", func(r map[string]any) { listing(r)["rent_per_m2"] = threshold(16, 9) }, "cheaper is better"},
@@ -65,7 +84,7 @@ func TestParseRejectsBadConfigs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := Parse(data); err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+			if _, err := Parse(data, testFiles); err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("Parse() error = %v, want it to contain %q", err, tt.wantErr)
 			}
 		})
@@ -113,7 +132,7 @@ func validConfig(t *testing.T) map[string]any {
 	return map[string]any{
 		"name":        "Test",
 		"language":    "de",
-		"bbox":        []float64{10, 50, 12, 52},
+		"boundary":    "test.poly",
 		"map":         map[string]any{"lat": 51, "lon": 11, "zoom": 13},
 		"osm_extract": "https://example.com/test.osm.pbf",
 		"listing": map[string]any{
@@ -126,6 +145,34 @@ func validConfig(t *testing.T) map[string]any {
 			"best_min": 5, "worst_min": 20, "weight": 1,
 			"osm": []any{map[string]any{"shop": "supermarket"}},
 		}},
+	}
+}
+
+// testFiles holds the boundaries the test configs refer to: a square from
+// 10°E 50°N to 12°E 52°N.
+var testFiles = fstest.MapFS{
+	"test.poly":   {Data: []byte("test\n1\n 10 50\n 12 50\n 12 52\n 10 52\nEND\nEND\n")},
+	"broken.poly": {Data: []byte("test\n1\n 10 50\nEND\nEND\n")},
+}
+
+func TestValidateNeedsTheBoundary(t *testing.T) {
+	r := &Region{Name: "Test", Language: "de"}
+	if err := r.Validate(); err == nil || !strings.Contains(err.Error(), "boundary is not loaded") {
+		t.Errorf("Validate() = %v, want a missing boundary error", err)
+	}
+}
+
+func TestParseValidConfig(t *testing.T) {
+	data, err := json.Marshal(validConfig(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := Parse(data, testFiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.BBox != [4]float64{10, 50, 12, 52} {
+		t.Errorf("BBox = %v, want the square's corners", r.BBox)
 	}
 }
 

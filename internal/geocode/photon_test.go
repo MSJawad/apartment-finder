@@ -37,7 +37,7 @@ func TestGeocode(t *testing.T) {
 		calls.Add(1)
 		q := req.URL.Query()
 		if q.Get("lang") != "de" || q.Get("limit") != "1" || strings.Join(q["layer"], ",") != "house,street" ||
-			q.Get("bbox") != "9.8632,50.1997,12.6611,51.6524" || req.URL.Path != "/api" {
+			q.Get("bbox") != "9.863176,50.19971,12.66106,51.65237" || req.URL.Path != "/api" {
 			t.Errorf("unexpected request %s", req.URL)
 		}
 		fixture, ok := fixtures[q.Get("q")]
