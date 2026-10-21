@@ -65,3 +65,12 @@ jobs:
           --label org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           --tag ${{ env.IMAGE }}:${{ github.sha }}
           --output type=image,push=${{ env.PUSH }}
+      - name: Check the registry has an arm64 image
+        if: env.PUSH == 'true'
+        # Reads back what the registry actually stores. Attestations are listed
+        # with platform unknown/unknown, so they are filtered out.
+        run: |
+          platforms=$(docker buildx imagetools inspect "$IMAGE:$GITHUB_SHA" --format '{{json .Manifest}}' \
+            | jq -r '[.manifests[].platform | select(.os != "unknown") | "\(.os)/\(.architecture)"] | unique | join(",")')
+          echo "Published platforms: $platforms"
+          test "$platforms" = "linux/arm64"
