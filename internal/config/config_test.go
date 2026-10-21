@@ -6,7 +6,7 @@ import (
 )
 
 func TestLoad(t *testing.T) {
-	const dbURL = "postgres://app@db:5432/app"
+	const dbURL, region = "postgres://app@db:5432/app", "config/thuringia.json"
 	tests := []struct {
 		name    string
 		env     map[string]string
@@ -15,27 +15,32 @@ func TestLoad(t *testing.T) {
 	}{
 		{
 			name: "defaults",
-			env:  map[string]string{"DATABASE_URL": dbURL},
-			want: Config{Addr: ":8080", AdminAddr: ":9090", LogLevel: slog.LevelInfo, DatabaseURL: dbURL},
+			env:  map[string]string{"DATABASE_URL": dbURL, "REGION_CONFIG": region},
+			want: Config{Addr: ":8080", AdminAddr: ":9090", LogLevel: slog.LevelInfo, DatabaseURL: dbURL, RegionPath: region},
 		},
 		{
 			name: "overrides",
-			env:  map[string]string{"DATABASE_URL": dbURL, "ADDR": ":8000", "ADMIN_ADDR": "127.0.0.1:9000", "LOG_LEVEL": "debug"},
-			want: Config{Addr: ":8000", AdminAddr: "127.0.0.1:9000", LogLevel: slog.LevelDebug, DatabaseURL: dbURL},
+			env:  map[string]string{"DATABASE_URL": dbURL, "REGION_CONFIG": region, "ADDR": ":8000", "ADMIN_ADDR": "127.0.0.1:9000", "LOG_LEVEL": "debug"},
+			want: Config{Addr: ":8000", AdminAddr: "127.0.0.1:9000", LogLevel: slog.LevelDebug, DatabaseURL: dbURL, RegionPath: region},
 		},
 		{
 			name: "log level is case insensitive",
-			env:  map[string]string{"DATABASE_URL": dbURL, "LOG_LEVEL": "WARN"},
-			want: Config{Addr: ":8080", AdminAddr: ":9090", LogLevel: slog.LevelWarn, DatabaseURL: dbURL},
+			env:  map[string]string{"DATABASE_URL": dbURL, "REGION_CONFIG": region, "LOG_LEVEL": "WARN"},
+			want: Config{Addr: ":8080", AdminAddr: ":9090", LogLevel: slog.LevelWarn, DatabaseURL: dbURL, RegionPath: region},
 		},
 		{
 			name:    "unknown log level",
-			env:     map[string]string{"DATABASE_URL": dbURL, "LOG_LEVEL": "loud"},
+			env:     map[string]string{"DATABASE_URL": dbURL, "REGION_CONFIG": region, "LOG_LEVEL": "loud"},
 			wantErr: true,
 		},
 		{
 			name:    "database url is required",
-			env:     map[string]string{},
+			env:     map[string]string{"REGION_CONFIG": region},
+			wantErr: true,
+		},
+		{
+			name:    "region config is required",
+			env:     map[string]string{"DATABASE_URL": dbURL},
 			wantErr: true,
 		},
 	}
