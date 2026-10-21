@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/MSJawad/apartment-finder/internal/config"
+	"github.com/MSJawad/apartment-finder/internal/db"
 	"github.com/MSJawad/apartment-finder/internal/observability"
 	"github.com/MSJawad/apartment-finder/internal/server"
 )
@@ -34,14 +35,25 @@ func run() error {
 	reg := observability.NewRegistry(version)
 	metrics := server.NewMetrics(reg)
 
-	public := http.NewServeMux()
-
 	// Kubernetes sends SIGTERM before stopping a pod; cancelling ctx starts a
 	// graceful shutdown so in-flight requests can finish.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	pool, err := db.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+	if err := db.Migrate(ctx, pool, logger); err != nil {
+		return err
+	}
+	checks := []server.Check{{Name: "database", Run: pool.Ping}}
+
+	public := http.NewServeMux()
+
 	return server.Serve(ctx, logger,
 		server.NewServer(cfg.Addr, server.Observe(public, metrics, logger), logger),
-		server.NewServer(cfg.AdminAddr, server.AdminHandler(reg, logger, nil), logger),
+		server.NewServer(cfg.AdminAddr, server.AdminHandler(reg, logger, checks), logger),
 	)
 }
