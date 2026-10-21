@@ -2,6 +2,7 @@ package db_test
 
 import (
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -29,13 +30,13 @@ func TestMigrateCreatesSchemaOnce(t *testing.T) {
 	if err := pool.QueryRow(t.Context(), "SELECT postgis_lib_version()").Scan(&postgisVersion); err != nil {
 		t.Fatalf("PostGIS not installed: %v", err)
 	}
-	for _, table := range []string{"visitors", "listings", "jobs"} {
+	for _, table := range []string{"visitors", "listings", "jobs", "upstream_cache"} {
 		if !tableExists(t, pool, table) {
 			t.Errorf("table %s missing after Migrate", table)
 		}
 	}
-	if n := count(t, pool, "SELECT count(*) FROM schema_migrations"); n != 2 {
-		t.Errorf("schema_migrations has %d rows, want 2", n)
+	if n, want := count(t, pool, "SELECT count(*) FROM schema_migrations"), migrationFiles(t); n != want {
+		t.Errorf("schema_migrations has %d rows, want %d", n, want)
 	}
 }
 
@@ -56,8 +57,8 @@ func TestMigrateIsSafeToRunConcurrently(t *testing.T) {
 			t.Errorf("Migrate() #%d error = %v", i, err)
 		}
 	}
-	if n := count(t, pool, "SELECT count(*) FROM schema_migrations"); n != 2 {
-		t.Errorf("schema_migrations has %d rows, want 2", n)
+	if n, want := count(t, pool, "SELECT count(*) FROM schema_migrations"), migrationFiles(t); n != want {
+		t.Errorf("schema_migrations has %d rows, want %d", n, want)
 	}
 }
 
@@ -105,6 +106,16 @@ func TestMigrateRejectsAnEditedMigration(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "changed after it was applied") {
 		t.Fatalf("Migrate() error = %v, want an edited-migration error", err)
 	}
+}
+
+// migrationFiles counts the migrations shipped in the migrations directory.
+func migrationFiles(t *testing.T) int {
+	t.Helper()
+	entries, err := os.ReadDir("migrations")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(entries)
 }
 
 func tableExists(t *testing.T, pool *pgxpool.Pool, name string) bool {
