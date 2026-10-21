@@ -16,6 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/MSJawad/apartment-finder/internal/input"
 	"github.com/MSJawad/apartment-finder/internal/listing"
 	"github.com/MSJawad/apartment-finder/internal/region"
 	"github.com/MSJawad/apartment-finder/internal/visitor"
@@ -133,14 +134,14 @@ func (e *apiError) Error() string { return e.Message }
 
 // toAPIError maps known errors to responses, and returns nil for others.
 func toAPIError(err error) *apiError {
-	if fields, ok := errors.AsType[listing.FieldErrors](err); ok {
+	if fields, ok := errors.AsType[input.FieldErrors](err); ok {
 		return &apiError{status: http.StatusBadRequest, Message: "Some fields need fixing.", Fields: fields}
 	}
 	if limit, ok := errors.AsType[*visitor.LimitError](err); ok {
 		return &apiError{status: http.StatusTooManyRequests, Message: limit.Reason, retryAfter: int(limit.RetryAfter.Seconds())}
 	}
 	switch {
-	case errors.Is(err, listing.ErrInvalidInput):
+	case errors.Is(err, input.ErrMalformed):
 		return &apiError{status: http.StatusBadRequest, Message: "The request body must be a JSON object with the listing's fields."}
 	case errors.Is(err, listing.ErrNotFound):
 		return &apiError{status: http.StatusNotFound, Message: "There's no such listing."}

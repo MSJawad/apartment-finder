@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/MSJawad/apartment-finder/internal/enrich"
+	"github.com/MSJawad/apartment-finder/internal/input"
 	"github.com/MSJawad/apartment-finder/internal/listing"
 	"github.com/MSJawad/apartment-finder/internal/scoring"
 	"github.com/MSJawad/apartment-finder/internal/visitor"
@@ -208,7 +209,7 @@ func (a *API) criteria(query url.Values) ([]scoring.Criterion, error) {
 		known[c.Key] = true
 	}
 	weights := map[string]float64{}
-	fields := listing.FieldErrors{}
+	fields := input.FieldErrors{}
 	for param, values := range query {
 		key, ok := strings.CutPrefix(param, weightPrefix)
 		if !ok {
