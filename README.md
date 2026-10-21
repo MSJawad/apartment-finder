@@ -42,6 +42,7 @@ OSRM_WALK_URL=http://localhost:5001 OSRM_BIKE_URL=http://localhost:5002 ADMIN_AD
 curl -X POST localhost:8080/api/listings -H 'Content-Type: application/json' \
   -d '{"address": "Anger 50, Erfurt", "warm_rent_eur": 820, "size_m2": 61, "rooms": 2}'
 curl localhost:8080/api/listings  # scored within a few seconds
+open http://localhost:8080        # the page
 curl localhost:9090/metrics  # Prometheus metrics
 docker build -t apartment-finder .
 ```
@@ -65,7 +66,7 @@ JSON over HTTP. A visitor is identified by a cookie that the first `POST` sets; 
 
 | Request | What it does |
 | --- | --- |
-| `GET /api/region` | The region's name, the box around its boundary, and where the map opens |
+| `GET /api/region` | The region's name, its outline and the box around it, and where the map opens |
 | `GET /api/listings` | The example listings and your own, ranked, with each score's breakdown and the criteria. The examples come from the region config, on streets without house numbers, so none points at a real home |
 | `GET /api/listings?weight.<criterion>=<0-10>` | The same, with your weights, e.g. `weight.rent_per_m2=5&weight.category:gym=0` |
 | `POST /api/listings` | Add a listing: `address`, `warm_rent_eur`, `size_m2`, `rooms`, and optionally `source_url`. Answers `202 Accepted` with the listing, still `pending` |
@@ -323,6 +324,42 @@ them.
   simply wins.
 - **A place costs what a listing costs.** Adding one geocodes an address, so places count
   towards the same limits as listings.
+
+### The page: no build step, no CDN, a strict content policy
+
+The page is one HTML file, a stylesheet and a script of plain modern JavaScript, plus a
+copy of Leaflet for the map. All are built into the Go binary with `embed`.
+
+- **No framework or build step.** The page has a form, sliders, a table and a map, and the
+  server does all the scoring, so the script only fetches JSON and draws it. A framework
+  would add a toolchain to install, update and audit, for no gain at this size.
+- **Leaflet is vendored, not loaded from a CDN.** Version 1.9.4, the latest stable
+  release, was copied in after checking the download against the hash npm publishes.
+  Nothing at runtime depends on another site staying up or uncompromised.
+- **A strict Content-Security-Policy.** The page may load scripts, styles and data only
+  from itself, plus map tiles from openstreetmap.org. Inline scripts and styles are
+  blocked. Text visitors type, such as addresses and place names, is only ever inserted
+  with `textContent`, never as HTML. If that rule slipped somewhere, the policy would
+  still stop injected script from running.
+- **Caching by content.** Each file gets an ETag from a hash of its contents. Browsers keep
+  their copy and revalidate it with a cheap `304` until a deploy changes the file.
+- **Polling while something is pending.** After adding a listing or place, the page asks
+  again every 1.5 seconds until nothing is pending, then stops. Server-sent events would
+  push results sooner, but scoring takes about a second, and polling needs nothing on the
+  server.
+- **Weights live in the browser.** Slider positions are saved in `localStorage` and sent
+  as `weight.` parameters. Weights for criteria that no longer exist, such as a deleted
+  place, are left out, since the API rejects unknown criteria.
+
+Small details matter on a phone:
+- The map stays pinned to the top, so moving a slider visibly recolors the markers.
+- `scroll-padding-top` makes focused fields and rows land below the map instead of
+  behind it.
+- Numbers and units are joined with no-break spaces, so "12.34 €/m²" never splits across
+  lines.
+
+Markers show the score as a number on its color, so they read without telling red from
+green.
 
 ### Listings come in through a Source
 
