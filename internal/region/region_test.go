@@ -126,6 +126,12 @@ func TestCategoryMatches(t *testing.T) {
 	}
 }
 
+func TestModeUnit(t *testing.T) {
+	if Walk.Unit() != "min walk" || Bike.Unit() != "min by bike" {
+		t.Errorf("units = %q, %q", Walk.Unit(), Bike.Unit())
+	}
+}
+
 func TestSearchRadius(t *testing.T) {
 	walk := Category{Mode: Walk, WorstMin: 20}
 	bike := Category{Mode: Bike, WorstMin: 20}
@@ -183,6 +189,9 @@ func TestParseValidConfig(t *testing.T) {
 	}
 	if r.BBox != [4]float64{10, 50, 12, 52} {
 		t.Errorf("BBox = %v, want the square's corners", r.BBox)
+	}
+	if outline := r.Outline(); len(outline) != 1 || len(outline[0]) != 4 {
+		t.Errorf("Outline() = %v, want the square", outline)
 	}
 }
 

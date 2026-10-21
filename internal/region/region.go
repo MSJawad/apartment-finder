@@ -25,6 +25,14 @@ const (
 	Bike Mode = "bike"
 )
 
+// Unit is how a travel time in this mode reads, as in "4 min walk".
+func (m Mode) Unit() string {
+	if m == Bike {
+		return "min by bike"
+	}
+	return "min walk"
+}
+
 // metresPerMinute are the speeds search radii are derived from. They are
 // faster than anyone really walks (6 km/h) or cycles (20 km/h), so a
 // straight-line radius never cuts off a place that is reachable in time.
@@ -199,6 +207,12 @@ func (c Category) validate() error {
 	return nil
 }
 
+// Outline returns the region's outer boundary rings as lon, lat pairs, for
+// drawing on a map.
+func (r *Region) Outline() [][][2]float64 {
+	return r.boundary.Outline()
+}
+
 // Contains reports whether the point is inside the region's boundary, where
 // there is routing and amenity data.
 func (r *Region) Contains(lat, lon float64) bool {
@@ -242,7 +256,7 @@ func (r *Region) Criteria() []scoring.Criterion {
 	}
 	for _, c := range r.Categories {
 		criteria = append(criteria, scoring.Criterion{
-			Key: CategoryCriterion(c.Key), Label: c.Label, Unit: "min",
+			Key: CategoryCriterion(c.Key), Label: c.Label, Unit: c.Mode.Unit(),
 			Best: c.BestMin, Worst: c.WorstMin, Weight: c.Weight,
 		})
 	}

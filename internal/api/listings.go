@@ -25,7 +25,10 @@ const maxWeight = 10
 type regionJSON struct {
 	Name string     `json:"name"`
 	BBox [4]float64 `json:"bbox"`
-	Map  struct {
+	// Outline is the covered area's outer boundary, as rings of lon, lat
+	// pairs, so the page can show where addresses are accepted.
+	Outline [][][2]float64 `json:"outline"`
+	Map     struct {
 		Lat  float64 `json:"lat"`
 		Lon  float64 `json:"lon"`
 		Zoom int     `json:"zoom"`
@@ -33,7 +36,7 @@ type regionJSON struct {
 }
 
 func (a *API) getRegion(w http.ResponseWriter, _ *http.Request) {
-	resp := regionJSON{Name: a.Region.Name, BBox: a.Region.BBox}
+	resp := regionJSON{Name: a.Region.Name, BBox: a.Region.BBox, Outline: a.Region.Outline()}
 	resp.Map.Lat, resp.Map.Lon, resp.Map.Zoom = a.Region.Map.Lat, a.Region.Map.Lon, a.Region.Map.Zoom
 	writeJSON(w, http.StatusOK, resp)
 }
