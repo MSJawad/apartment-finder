@@ -18,15 +18,24 @@ scored on the map.
 Requires Go 1.27 and Docker.
 
 ```sh
-go test -race ./...          # unit tests
+go test -race ./...          # all tests; integration tests start a PostGIS container
+go test -short ./...         # unit tests only, no Docker needed
 golangci-lint run            # lint
+
+# A local database, built from the same Dockerfile as production
+docker build -t apartment-finder-postgis deploy/postgis
+docker run -d --name apartment-finder-db -e POSTGRES_PASSWORD=dev -p 5432:5432 apartment-finder-postgis
+export DATABASE_URL='postgres://postgres:dev@localhost:5432/postgres?sslmode=disable'
+
 go run ./cmd/api             # public on :8080, admin on :9090
+go run ./cmd/worker          # admin on :9090, so run one at a time or set ADMIN_ADDR
 curl localhost:9090/metrics  # Prometheus metrics
 docker build -t apartment-finder .
 ```
 
-Configuration comes from environment variables: `ADDR` (default `:8080`), `ADMIN_ADDR`
-(default `:9090`) and `LOG_LEVEL` (`debug`, `info`, `warn` or `error`; default `info`).
+Configuration comes from environment variables: `DATABASE_URL` (required), `ADDR`
+(default `:8080`), `ADMIN_ADDR` (default `:9090`) and `LOG_LEVEL` (`debug`, `info`, `warn`
+or `error`; default `info`).
 
 ## Decisions
 
@@ -80,3 +89,86 @@ Base images are pinned by `@sha256` digest, and GitHub Actions by commit SHA, wi
 readable version in a comment. Tags can be moved to point at different content; a
 digest can't. So a build today and a build next month use the same inputs, and a
 compromised upstream tag can't slip into CI.
+
+### A job queue in Postgres, not Kafka or Redis
+
+Adding a listing kicks off slow work: geocoding, amenity lookups and routing, each
+calling an external service. That work runs in the background, in a queue stored in a
+Postgres table.
+
+Kafka or Redis would mean another stateful system to deploy, monitor, back up and fit
+into a 12 GB VM, for a workload of maybe a few hundred jobs a day. Postgres handles that
+easily. More importantly, a job inserted in the same transaction as its listing exists
+exactly when the listing does. With a separate broker, the two writes can disagree: the
+listing commits but publishing the job fails, or the job is published for a listing
+that then rolls back. Fixing that needs an outbox table, which is a Postgres queue
+anyway.
+
+The trade-off is throughput: a table-based queue tops out far below Kafka, and every
+poll is a query. If this ever needed thousands of jobs a second, a broker would earn its
+place.
+
+### Claiming jobs: SKIP LOCKED, a lease and a fencing token
+
+A worker claims a job with `SELECT ... FOR UPDATE SKIP LOCKED` inside an `UPDATE`.
+`SKIP LOCKED` lets many workers poll the same table at once: each skips rows another
+worker is claiming instead of waiting for them.
+
+The claim is a lease (`locked_until`), not a transaction held open while the job runs.
+Jobs call external APIs and can take seconds. A transaction open that long ties up a
+database connection and holds back vacuum, Postgres' cleanup of old row versions. With
+a lease, the claim commits immediately; if the worker dies, the lease runs out and
+another worker retries the job.
+
+Leases bring a classic hazard: a worker that stalls past its lease, then wakes up and
+reports a result for a job someone else now holds. Every claim therefore gets a new
+random `lease_token`, and completing or failing a job requires the current token. A
+stale worker's update matches no row and is discarded.
+
+Delivery is at least once: a job whose lease runs out mid-run can run twice. Handlers
+are written to be safe to repeat, for example by upserting results.
+
+Failed jobs retry with exponential backoff (30s, 1m, 2m, up to an hour), randomly
+shortened by up to half so jobs that failed together don't retry in lockstep. After 8
+attempts, about an hour of retries, a job is marked `dead` with its last error.
+Attempts are counted at claim time, so a job that keeps crashing its worker also runs
+out of attempts instead of crashing workers forever.
+
+### Polling instead of LISTEN/NOTIFY
+
+Idle workers check for jobs once a second. Postgres' `LISTEN/NOTIFY` could wake them
+instantly, but a notification sent while no worker is listening (during a deploy, say)
+is lost, so polling would still be needed as a fallback. One cheap indexed query a
+second costs nothing, and a second of latency is invisible next to geocoding and
+routing.
+
+### Our own PostGIS image
+
+The official `postgis/postgis` image is published for amd64 only, and the VM is arm64. A
+third-party multi-arch build exists, but its Debian variants stopped being updated in
+early 2026, so they were missing months of Postgres security releases.
+`deploy/postgis/Dockerfile` uses the same recipe as the official image instead: the
+official `postgres:18` image, which is multi-arch and promptly patched, plus PostGIS
+from the PostgreSQL project's own apt repository. Both are pinned, so builds are
+repeatable, and security updates are an explicit version bump. The integration tests
+build and run this same image, so tests and production can't drift apart.
+
+### Migrations: a small runner instead of a library
+
+Migrations are numbered SQL files embedded in the binary. On startup, the api and worker
+both run them, holding a Postgres advisory lock so that pods starting at the same time
+take turns. Each migration runs in one transaction together with the row recording it,
+so a failed migration leaves nothing behind. A checksum per migration catches anyone
+editing a migration that has already run, which would leave old and new databases
+silently different.
+
+Libraries such as goose add down-migrations and a CLI. Migrations here only go forward:
+undoing a change is a new migration, which is how changes reach production anyway. That
+fits in one short file with no dependency.
+
+### Integration tests: one container, one database per test
+
+Tests start a single PostGIS container per test binary and migrate a template database
+once. Each test gets its own database copied from the template, which takes
+milliseconds. Tests run in parallel without seeing each other's rows, and no test has to
+clean up after itself.
