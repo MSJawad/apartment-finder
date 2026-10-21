@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"regexp"
 
 	"github.com/MSJawad/apartment-finder/internal/scoring"
@@ -38,9 +40,13 @@ type Region struct {
 	Name string `json:"name"`
 	// Language is the two-letter code addresses are shown in, e.g. "de".
 	Language string `json:"language"`
-	// BBox is the covered area: min lon, min lat, max lon, max lat.
-	// Geocoding is limited to it, and it should match the routing data.
-	BBox [4]float64 `json:"bbox"`
+	// BoundaryFile is the region's .poly file, the one Geofabrik publishes
+	// with its extract, relative to the config file. See Boundary.
+	BoundaryFile string `json:"boundary"`
+	// BBox is the smallest box around the boundary: min lon, min lat, max
+	// lon, max lat. Geocoder searches are limited to it.
+	BBox     [4]float64 `json:"-"`
+	boundary *Boundary
 	// Map is where the page's map opens.
 	Map struct {
 		Lat  float64 `json:"lat"`
@@ -79,42 +85,55 @@ type Category struct {
 	OSM []map[string]string `json:"osm"`
 }
 
-// Load reads and validates the region file at path.
+// Load reads and validates the region file at path, and the boundary file
+// next to it.
 func Load(path string) (*Region, error) {
 	data, err := os.ReadFile(path) //nolint:gosec // the path comes from our own deployment config
 	if err != nil {
 		return nil, fmt.Errorf("read region config: %w", err)
 	}
-	return Parse(data)
+	return Parse(data, os.DirFS(filepath.Dir(path)))
 }
 
-// Parse decodes and validates a region config. Unknown fields are errors, so
-// a misspelt setting can't be silently ignored.
-func Parse(data []byte) (*Region, error) {
+// Parse decodes and validates a region config, reading its boundary file
+// from files. Unknown fields are errors, so a misspelt setting can't be
+// silently ignored.
+func Parse(data []byte, files fs.FS) (*Region, error) {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	var r Region
 	if err := dec.Decode(&r); err != nil {
 		return nil, fmt.Errorf("parse region config: %w", err)
 	}
+	if r.BoundaryFile == "" {
+		return nil, errors.New("region config: boundary is missing")
+	}
+	f, err := files.Open(r.BoundaryFile)
+	if err != nil {
+		return nil, fmt.Errorf("region config: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	if r.boundary, err = ParseBoundary(f); err != nil {
+		return nil, fmt.Errorf("region config: %w", err)
+	}
+	r.BBox = r.boundary.BBox()
 	if err := r.Validate(); err != nil {
 		return nil, fmt.Errorf("region config: %w", err)
 	}
 	return &r, nil
 }
 
-// Validate reports the first problem with r.
+// Validate reports the first problem with r, whose boundary must be loaded.
 func (r *Region) Validate() error {
-	minLon, minLat, maxLon, maxLat := r.BBox[0], r.BBox[1], r.BBox[2], r.BBox[3]
 	switch {
 	case r.Name == "":
 		return errors.New("name is missing")
 	case !languageCode.MatchString(r.Language):
 		return errors.New(`language must be a two-letter code such as "de"`)
-	case minLon < -180 || maxLon > 180 || minLat < -90 || maxLat > 90 || minLon >= maxLon || minLat >= maxLat:
-		return errors.New("bbox must be [min lon, min lat, max lon, max lat]")
+	case r.boundary == nil:
+		return errors.New("boundary is not loaded")
 	case !r.Contains(r.Map.Lat, r.Map.Lon):
-		return errors.New("map center is outside the bbox")
+		return errors.New("map center is outside the boundary")
 	case r.Map.Zoom < 1 || r.Map.Zoom > 19:
 		return errors.New("map zoom must be between 1 and 19")
 	case r.OSMExtract == "":
@@ -158,9 +177,10 @@ func (c Category) validate() error {
 	return nil
 }
 
-// Contains reports whether the point is inside the region's bbox.
+// Contains reports whether the point is inside the region's boundary, where
+// there is routing and amenity data.
 func (r *Region) Contains(lat, lon float64) bool {
-	return lon >= r.BBox[0] && lat >= r.BBox[1] && lon <= r.BBox[2] && lat <= r.BBox[3]
+	return r.boundary.Contains(lat, lon)
 }
 
 // SearchRadius is how far, in metres in a straight line, to look for places
