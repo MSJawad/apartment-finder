@@ -1,0 +1,8 @@
+# Build output
+/bin/
+
+# Test output
+coverage.out
+
+# Local environment overrides; never commit secrets
+.env
