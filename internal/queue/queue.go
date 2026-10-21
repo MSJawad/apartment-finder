@@ -156,3 +156,18 @@ func (q *Queue) Fail(ctx context.Context, job Job, cause error, retryIn time.Dur
 	}
 	return status == "dead", nil
 }
+
+// DeleteFinished deletes jobs that finished a while ago: done jobs after
+// keepDone, and dead ones after keepDead, which is longer so failures stay
+// around to be looked into. It returns how many it deleted.
+func DeleteFinished(ctx context.Context, db DB, keepDone, keepDead time.Duration) (int64, error) {
+	tag, err := db.Exec(ctx, `
+		DELETE FROM jobs
+		WHERE (status = 'done' AND updated_at < now() - make_interval(secs => $1))
+		   OR (status = 'dead' AND updated_at < now() - make_interval(secs => $2))`,
+		keepDone.Seconds(), keepDead.Seconds())
+	if err != nil {
+		return 0, fmt.Errorf("delete finished jobs: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}

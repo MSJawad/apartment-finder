@@ -162,3 +162,22 @@ func TestGetNeverCachesErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestDeleteExpired(t *testing.T) {
+	t.Parallel()
+	pool := dbtest.New(t)
+	svc := newFakeService(t, http.StatusOK, `["Anger 1"]`)
+	client := newClient(pool)
+	for _, q := range []string{"anger", "domplatz"} {
+		if _, err := client.Get(t.Context(), svc.URL+"/api?q="+q, isEmpty); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(t.Context(), "UPDATE upstream_cache SET expires_at = now() - interval '1 second' WHERE url LIKE '%anger'"); err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := upstream.DeleteExpired(t.Context(), pool)
+	if err != nil || deleted != 1 {
+		t.Errorf("DeleteExpired() = %d, %v; want 1", deleted, err)
+	}
+}

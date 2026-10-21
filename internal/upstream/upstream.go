@@ -158,3 +158,13 @@ func NewMetrics(reg prometheus.Registerer) *Metrics {
 	reg.MustRegister(m.requests, m.duration)
 	return m
 }
+
+// DeleteExpired deletes cache entries past their expiry, which Get no longer
+// serves, and returns how many it deleted.
+func DeleteExpired(ctx context.Context, pool *pgxpool.Pool) (int64, error) {
+	tag, err := pool.Exec(ctx, "DELETE FROM upstream_cache WHERE expires_at <= now()")
+	if err != nil {
+		return 0, fmt.Errorf("delete expired cache entries: %w", err)
+	}
+	return tag.RowsAffected(), nil
+}
