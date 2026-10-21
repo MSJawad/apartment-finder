@@ -1,0 +1,1 @@
+{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"type":"house","name":"Alexanderplatz 1","street":"Alexanderplatz","housenumber":"1","city":"Berlin","postcode":"10178","countrycode":"DE"},"geometry":{"type":"Point","coordinates":[13.4132,52.5219]}}]}

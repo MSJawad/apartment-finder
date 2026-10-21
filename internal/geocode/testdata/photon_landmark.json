@@ -1,0 +1,1 @@
+{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"osm_type":"N","osm_id":1,"osm_key":"railway","osm_value":"station","type":"house","housenumber":"12","name":"Erfurt Hauptbahnhof","street":"Willy-Brandt-Platz","city":"Erfurt","postcode":"99084","countrycode":"DE"},"geometry":{"type":"Point","coordinates":[11.0385,50.9725]}}]}

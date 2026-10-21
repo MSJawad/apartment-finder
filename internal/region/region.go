@@ -28,11 +28,16 @@ const (
 // straight-line radius never cuts off a place that is reachable in time.
 var metresPerMinute = map[Mode]float64{Walk: 100, Bike: 333}
 
-var categoryKey = regexp.MustCompile(`^[a-z][a-z_]*$`)
+var (
+	categoryKey  = regexp.MustCompile(`^[a-z][a-z_]*$`)
+	languageCode = regexp.MustCompile(`^[a-z]{2}$`)
+)
 
 // Region is the covered area and its scoring rules.
 type Region struct {
 	Name string `json:"name"`
+	// Language is the two-letter code addresses are shown in, e.g. "de".
+	Language string `json:"language"`
 	// BBox is the covered area: min lon, min lat, max lon, max lat.
 	// Geocoding is limited to it, and it should match the routing data.
 	BBox [4]float64 `json:"bbox"`
@@ -104,6 +109,8 @@ func (r *Region) Validate() error {
 	switch {
 	case r.Name == "":
 		return errors.New("name is missing")
+	case !languageCode.MatchString(r.Language):
+		return errors.New(`language must be a two-letter code such as "de"`)
 	case minLon < -180 || maxLon > 180 || minLat < -90 || maxLat > 90 || minLon >= maxLon || minLat >= maxLat:
 		return errors.New("bbox must be [min lon, min lat, max lon, max lat]")
 	case !r.Contains(r.Map.Lat, r.Map.Lon):
