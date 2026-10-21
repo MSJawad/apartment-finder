@@ -5,6 +5,8 @@ import (
 	"maps"
 	"slices"
 	"testing"
+
+	"github.com/MSJawad/apartment-finder/internal/input"
 )
 
 func TestManualDraft(t *testing.T) {
@@ -75,11 +77,11 @@ func TestManualDraft(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got, err := Manual{}.Draft(t.Context(), []byte(tt.input))
-			fields, isFieldErr := errors.AsType[FieldErrors](err)
+			fields, isFieldErr := errors.AsType[input.FieldErrors](err)
 			switch {
 			case tt.wantBad:
-				if !errors.Is(err, ErrInvalidInput) {
-					t.Errorf("err = %v, want ErrInvalidInput", err)
+				if !errors.Is(err, input.ErrMalformed) {
+					t.Errorf("err = %v, want ErrMalformed", err)
 				}
 			case tt.wantFields != nil:
 				if !isFieldErr {
@@ -94,13 +96,5 @@ func TestManualDraft(t *testing.T) {
 				t.Errorf("draft = %+v, want %+v", got, tt.want)
 			}
 		})
-	}
-}
-
-func TestFieldErrorsMessage(t *testing.T) {
-	t.Parallel()
-	err := FieldErrors{"rooms": "Enter the rooms.", "address": "Enter the address."}
-	if got, want := err.Error(), "invalid fields: address: Enter the address.; rooms: Enter the rooms."; got != want {
-		t.Errorf("Error() = %q, want %q", got, want)
 	}
 }

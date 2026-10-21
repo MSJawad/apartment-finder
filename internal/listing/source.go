@@ -3,22 +3,14 @@
 package listing
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
 	"math"
 	"net/url"
-	"slices"
 	"strings"
 	"unicode/utf8"
-)
 
-// ErrInvalidInput means a submission couldn't be read at all, for example
-// because it isn't JSON. Problems with single fields are FieldErrors.
-var ErrInvalidInput = errors.New("invalid input")
+	"github.com/MSJawad/apartment-finder/internal/input"
+)
 
 // Draft is a submitted listing that passed validation but isn't stored yet.
 type Draft struct {
@@ -31,22 +23,6 @@ type Draft struct {
 	SourceURL string
 }
 
-// FieldErrors maps each invalid field, by its JSON name, to a message for
-// the person who filled it in.
-type FieldErrors map[string]string
-
-func (e FieldErrors) Error() string {
-	fields := make([]string, 0, len(e))
-	for field := range e {
-		fields = append(fields, field)
-	}
-	slices.Sort(fields)
-	for i, field := range fields {
-		fields[i] = field + ": " + e[field]
-	}
-	return "invalid fields: " + strings.Join(fields, "; ")
-}
-
 // Source turns what someone submits into a Draft. Every way of adding a
 // listing goes through one, and each stored listing records which.
 //
@@ -57,7 +33,7 @@ func (e FieldErrors) Error() string {
 type Source interface {
 	// Name is stored with each listing, e.g. "manual".
 	Name() string
-	Draft(ctx context.Context, input []byte) (Draft, error)
+	Draft(ctx context.Context, data []byte) (Draft, error)
 }
 
 // Manual is the add-listing form: the visitor types in every field.
@@ -78,26 +54,14 @@ type manualInput struct {
 
 // Draft implements Source. It reports every invalid field at once, so the
 // form can mark them all.
-func (Manual) Draft(_ context.Context, input []byte) (Draft, error) {
+func (Manual) Draft(_ context.Context, data []byte) (Draft, error) {
 	var in manualInput
-	dec := json.NewDecoder(bytes.NewReader(input))
-	// A misspelt field is an error rather than silently missing.
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&in); err != nil {
-		if typeErr, ok := errors.AsType[*json.UnmarshalTypeError](err); ok && typeErr.Field != "" {
-			return Draft{}, FieldErrors{typeErr.Field: "Must be a " + typeErr.Type.String() + "."}
-		}
-		return Draft{}, fmt.Errorf("%w: %w", ErrInvalidInput, err)
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return Draft{}, fmt.Errorf("%w: data after the JSON object", ErrInvalidInput)
+	if err := input.Decode(data, &in); err != nil {
+		return Draft{}, err
 	}
 
-	d := Draft{
-		Address:   strings.Join(strings.Fields(in.Address), " "),
-		SourceURL: strings.TrimSpace(in.SourceURL),
-	}
-	errs := FieldErrors{}
+	d := Draft{Address: input.Text(in.Address), SourceURL: strings.TrimSpace(in.SourceURL)}
+	errs := input.FieldErrors{}
 	if n := utf8.RuneCountInString(d.Address); n < 3 || n > 200 {
 		errs["address"] = "Enter the address, e.g. \"Johannesstraße 10, Erfurt\"."
 	}
