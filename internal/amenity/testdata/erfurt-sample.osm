@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A tiny hand-made extract around Erfurt's Anger for the import tests.
+  Like any OSM file, it lists nodes, then ways, then relations, each by ID.
+-->
+<osm version="0.6" generator="hand">
+  <!-- A supermarket mapped as a point, and a bench no category wants. -->
+  <node id="1" version="1" lat="50.9786" lon="11.0365"><tag k="shop" v="supermarket"/><tag k="name" v="REWE"/></node>
+  <node id="2" version="1" lat="50.9778" lon="11.0366"><tag k="amenity" v="bench"/></node>
+  <!-- Corners of the Brühler Garten park (way 10). -->
+  <node id="11" version="1" lat="50.9797" lon="11.0345"/>
+  <node id="12" version="1" lat="50.9797" lon="11.0385"/>
+  <node id="13" version="1" lat="50.9837" lon="11.0385"/>
+  <node id="14" version="1" lat="50.9837" lon="11.0345"/>
+  <!-- Corners of the Nordpark outline (way 21, relation 20). -->
+  <node id="22" version="1" lat="50.9900" lon="11.0300"/>
+  <node id="23" version="1" lat="50.9900" lon="11.0400"/>
+  <node id="24" version="1" lat="50.9950" lon="11.0400"/>
+  <node id="25" version="1" lat="50.9950" lon="11.0300"/>
+  <!-- Corners of the Aldi building (way 30). -->
+  <node id="31" version="1" lat="50.9750" lon="11.0300"/>
+  <node id="32" version="1" lat="50.9750" lon="11.0310"/>
+  <node id="33" version="1" lat="50.9756" lon="11.0310"/>
+  <node id="34" version="1" lat="50.9756" lon="11.0300"/>
+  <node id="40" version="1" lat="50.9779" lon="11.0368"><tag k="highway" v="bus_stop"/><tag k="name" v="Anger"/></node>
+  <node id="41" version="1" lat="50.9725" lon="11.0385"><tag k="railway" v="station"/><tag k="name" v="Erfurt Hbf"/></node>
+  <node id="50" version="1" lat="50.9760" lon="11.0400"><tag k="leisure" v="fitness_centre"/><tag k="name" v="FitX"/></node>
+
+  <!-- A park mapped as a closed way. -->
+  <way id="10" version="1">
+    <nd ref="11"/><nd ref="12"/><nd ref="13"/><nd ref="14"/><nd ref="11"/>
+    <tag k="leisure" v="park"/><tag k="name" v="Brühler Garten"/>
+  </way>
+  <!-- The untagged outline of the Nordpark multipolygon. -->
+  <way id="21" version="1"><nd ref="22"/><nd ref="23"/><nd ref="24"/><nd ref="25"/><nd ref="22"/></way>
+  <!-- A supermarket mapped as its building outline. -->
+  <way id="30" version="1">
+    <nd ref="31"/><nd ref="32"/><nd ref="33"/><nd ref="34"/><nd ref="31"/>
+    <tag k="building" v="retail"/><tag k="shop" v="supermarket"/><tag k="name" v="Aldi"/>
+  </way>
+
+  <!-- A park mapped as a multipolygon relation. -->
+  <relation id="20" version="1">
+    <member type="way" ref="21" role="outer"/>
+    <tag k="type" v="multipolygon"/><tag k="leisure" v="park"/><tag k="name" v="Nordpark"/>
+  </relation>
+</osm>
