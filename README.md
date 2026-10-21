@@ -60,11 +60,15 @@ JSON over HTTP. A visitor is identified by a cookie that the first `POST` sets; 
 | `POST /api/listings` | Add a listing: `address`, `warm_rent_eur`, `size_m2`, `rooms`, and optionally `source_url`. Answers `202 Accepted` with the listing, still `pending` |
 | `GET /api/listings/{id}` | One listing, with the same `weight.` parameters |
 | `DELETE /api/listings/{id}` | Delete one of your listings |
+| `GET /api/places` | Your personal places, such as work, each with the `criterion` key it scores under |
+| `POST /api/places` | Add a place: `name`, `address`, `mode` (`walk` or `bike`). Answers `202 Accepted` |
+| `DELETE /api/places/{id}` | Delete one of your places |
 
 Errors are `{"error": "...", "fields": {"rooms": "..."}}`, with `fields` naming each
 invalid field. Status codes: 400 for invalid input, 403 for a request from another site,
-404 for a listing that isn't yours or doesn't exist, 413 and 415 for oversized or
-non-JSON bodies, 429 with `Retry-After` when a limit is reached.
+404 for a listing or place that isn't yours or doesn't exist, 409 for an eleventh place,
+413 and 415 for oversized or non-JSON bodies, 429 with `Retry-After` when a limit is
+reached.
 
 ## Decisions
 
@@ -263,8 +267,8 @@ add or delete listings with it. Three things stop that:
 
 ### Limits count additions, under one lock
 
-Each listing costs a request to Photon, a free public geocoder, plus routing work on our
-small server. So additions are capped:
+Each listing or place costs a request to Photon, a free public geocoder, plus routing
+work on our small server. So additions are capped:
 - **Per visitor:** 10 an hour and 30 a day.
 - **Site-wide:** 300 a day. Clearing cookies gets around the per-visitor limits, but not
   this one, so Photon never sees more than 300 new addresses a day from us.
@@ -283,6 +287,28 @@ How the limits are counted:
 
 A refused addition gets `429 Too Many Requests` with a `Retry-After` header saying when
 the oldest counted addition leaves its window.
+
+### Personal places score the trip from each listing
+
+A visitor can add up to 10 places of their own, such as work or a university, each
+reached on foot or by bike. Each place becomes one more criterion, for that visitor only:
+the trip there from each listing, scoring 1 at 10 minutes or less and 0 at 45 or more.
+They count for the example listings too, so a new visitor sees how the examples suit
+them.
+
+- **One direction: from the listing.** Trips are measured from home to the place, the
+  morning commute, never the other way. On a bike the two can differ because of one-way
+  streets: from Anger 1 to the Hauptbahnhof takes 5.8 minutes, back 5.5.
+- **Two jobs, no gaps.** A new listing measures the trips to the places that see it, and
+  a new place measures the trips from the listings its visitor sees. If both are added at
+  the same moment, each job might run before the other has a location. So each job
+  commits its own location before looking for the other side: whichever reads second is
+  guaranteed to see the first, and the trip is always measured.
+- **Upserts, not delete-and-insert.** Both jobs can measure the same trip at the same
+  time, so trips are written with `INSERT ... ON CONFLICT DO UPDATE`, and the second write
+  simply wins.
+- **A place costs what a listing costs.** Adding one geocodes an address, so places count
+  towards the same limits as listings.
 
 ### Listings come in through a Source
 
