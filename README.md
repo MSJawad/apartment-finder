@@ -23,15 +23,18 @@ go test -race ./...          # all tests; integration tests start a PostGIS cont
 go test -short ./...         # unit tests only, no Docker needed
 golangci-lint run            # lint
 
-# A local database, built from the same Dockerfile as production
-docker build -t apartment-finder-postgis deploy/postgis
-docker run -d --name apartment-finder-db -e POSTGRES_PASSWORD=dev -p 5432:5432 apartment-finder-postgis
+# Download the region's OpenStreetMap extract into data/ and build the walking and
+# cycling routing data from it (about 2 minutes and 2 GB of memory)
+scripts/prepare-routing.sh
+
+# The database, built from the same Dockerfile as production, and the two routers
+docker compose up -d --wait
 export DATABASE_URL='postgres://postgres:dev@localhost:5432/postgres?sslmode=disable'
 export REGION_CONFIG=config/thuringia.json
+curl 'localhost:5001/route/v1/foot/11.0357,50.9774;11.0377,50.9728'  # walk (bike is on :5002)
 
-# Load the everyday places (supermarkets, stops, parks...) from OpenStreetMap
-curl -LO https://download.geofabrik.de/europe/germany/thueringen-latest.osm.pbf  # -L: "latest" redirects to a dated file
-go run ./cmd/import-amenities thueringen-latest.osm.pbf
+# Load the everyday places (supermarkets, stops, parks...) from the same extract
+go run ./cmd/import-amenities data/osm/region.osm.pbf
 
 go run ./cmd/api             # public on :8080, admin on :9090
 go run ./cmd/worker          # admin on :9090, so run one at a time or set ADMIN_ADDR
@@ -286,3 +289,55 @@ The import uses osmium, the standard command-line tool for OpenStreetMap extract
 
 The tests run the real osmium on a small hand-made extract, then load the result into
 PostGIS and query it.
+
+### Routing: our own OSRM, built from the same extract
+
+Travel times come from [OSRM](https://project-osrm.org/), run as two routers: one built
+with OSRM's walking profile, one with its cycling profile.
+
+**Why not a public router?** The public OSRM servers, the ones openstreetmap.org's
+directions use, allow "reasonable, non-commercial use", at most one request per second
+and "no heavy usage", with no uptime guarantee. A worker that scores listings around
+the clock shouldn't depend on that. Running our own also means there's no rate limit to
+work around, and travel times can't change under us when someone else updates their
+setup.
+
+**The data is built, not shipped.** `scripts/prepare-routing.sh` downloads the region's
+extract, checks it against Geofabrik's checksum, and runs OSRM's three preparation
+steps for each profile. The result, about 1.3 GB for both profiles, lives in a data
+directory rather than an image, so the router image stays the pinned upstream one and
+fresh map data never needs a new image.
+
+**MLD, not CH.** OSRM can prepare data for two algorithms:
+- **Contraction Hierarchies (CH)** answer queries fastest, but take much longer to
+  prepare.
+- **Multi-Level Dijkstra (MLD)** prepares in under a minute here and answers a query in
+  a few milliseconds.
+
+The worker sends one table request per listing and travel mode, so query speed doesn't
+matter at this scale, and quick preparation makes refreshing the data cheap.
+
+**Measured costs** for Thuringia (a 153 MB extract), per profile:
+
+| Step | Peak memory | Time, 8 threads |
+| --- | --- | --- |
+| `osrm-extract` | 1.9 GiB | 40 s (110 s with 2 threads) |
+| `osrm-partition` | 0.7 GiB | 20 s |
+| `osrm-customize` | 0.7 GiB | 4 s |
+| Running router | 0.4 GiB | - |
+
+Preparation peaks at about 0.85 GB of disk per profile and leaves about 0.65 GB.
+These numbers set the deployment's memory limits.
+
+**Checked against openstreetmap.org.** The same trips, routed on openstreetmap.org's
+directions with OSRM, came out within 20% of ours:
+
+| Trip | openstreetmap.org | Ours |
+| --- | --- | --- |
+| Anger 1 to Hauptbahnhof, walking | 707 m, 9 min | 666 m, 8.1 min |
+| Anger 1 to Hauptbahnhof, cycling | 1.0 km, 7 min | 1.0 km, 5.8 min |
+| University to Hauptbahnhof, walking | 3.2 km, 42 min | 3.1 km, 37.1 min |
+| University to Hauptbahnhof, cycling | 3.8 km, 17 min | 3.2 km, 16.7 min |
+
+Ours run a little shorter. The public servers use their own walking and cycling
+profiles, which differ from OSRM's defaults.
