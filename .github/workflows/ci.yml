@@ -55,6 +55,27 @@ jobs:
           terraform fmt -check -recursive
           terraform init -backend=false -input=false
           terraform validate
+      - name: Install Helm
+        # The version used locally, checked against its published hash.
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/helm.tar.gz" https://get.helm.sh/helm-v4.3.1-linux-amd64.tar.gz
+          echo "0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b  $RUNNER_TEMP/helm.tar.gz" | sha256sum -c -
+          mkdir -p "$RUNNER_TEMP/bin"
+          tar -xzf "$RUNNER_TEMP/helm.tar.gz" -C "$RUNNER_TEMP/bin" --strip-components=1 linux-amd64/helm
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Check the Helm chart
+        run: |
+          helm lint --strict deploy/chart --set host=ci.example.sslip.io
+          helm template apartment-finder deploy/chart --set host=ci.example.sslip.io > /dev/null
+      - name: Check the chart's PostGIS image matches its Dockerfile
+        # The image is tagged by a hash of its Dockerfile; a stale tag in the
+        # chart would deploy the old database image.
+        run: |
+          want="pg18-$(sha256sum deploy/postgis/Dockerfile | cut -c1-12)"
+          if ! grep -q "apartment-finder-postgis:$want\$" deploy/chart/values.yaml; then
+            echo "deploy/chart/values.yaml must use apartment-finder-postgis:$want"
+            exit 1
+          fi
 
   test:
     runs-on: ubuntu-24.04
@@ -130,6 +151,20 @@ jobs:
             --label org.opencontainers.image.source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
             --tag "$REGISTRY/apartment-finder-postgis:$tag" \
             --output type=image,push="$PUSH"
+      - name: Publish the Helm chart
+        # Version 0.1.<run number> rises with every build on main; the cluster
+        # deploys the highest one. The commit, as appVersion, is the tag of
+        # the app and importer images the chart runs.
+        if: env.PUSH == 'true'
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/helm.tar.gz" https://get.helm.sh/helm-v4.3.1-linux-amd64.tar.gz
+          echo "0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b  $RUNNER_TEMP/helm.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/helm.tar.gz" -C "$RUNNER_TEMP" --strip-components=1 linux-amd64/helm
+          echo "$GITHUB_TOKEN" | "$RUNNER_TEMP/helm" registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          "$RUNNER_TEMP/helm" package deploy/chart --version "0.1.$GITHUB_RUN_NUMBER" --app-version "$GITHUB_SHA" --destination "$RUNNER_TEMP"
+          "$RUNNER_TEMP/helm" push "$RUNNER_TEMP/apartment-finder-0.1.$GITHUB_RUN_NUMBER.tgz" oci://ghcr.io/msjawad/charts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Check the registry has arm64 images
         if: env.PUSH == 'true'
         # Reads back what the registry actually stores. Attestations are listed
