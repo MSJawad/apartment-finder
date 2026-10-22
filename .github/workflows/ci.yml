@@ -177,3 +177,37 @@ jobs:
             echo "$image: $platforms"
             test "$platforms" = "linux/arm64"
           done
+
+  deploy:
+    # Flux deploys from inside the cluster, so CI holds no cluster
+    # credentials. This job waits until the live site serves the commit, so a
+    # rollout that fails, and is rolled back, fails CI with a clear message.
+    needs: [image]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Wait for the site to serve this commit
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          deadline=$((SECONDS + 900))
+          while :; do
+            live=$(curl -sf --max-time 10 "$SITE_URL/api/version" | jq -r .version || true)
+            if [ "$live" = "$GITHUB_SHA" ]; then
+              echo "Live: $live"
+              exit 0
+            fi
+            # A newer commit may already be live; it includes this one.
+            if [ -n "$live" ] && git fetch -q origin main && git merge-base --is-ancestor "$GITHUB_SHA" "$live" 2>/dev/null; then
+              echo "A newer commit is live: $live"
+              exit 0
+            fi
+            if [ $SECONDS -ge $deadline ]; then
+              echo "::error::After 15 minutes $SITE_URL still serves ${live:-nothing}, not $GITHUB_SHA. The rollout failed or is stuck: run 'flux get helmreleases -A' and check the pods."
+              exit 1
+            fi
+            sleep 15
+          done
