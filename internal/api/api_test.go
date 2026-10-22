@@ -44,6 +44,7 @@ func setup(t *testing.T, limits visitor.Limits) (*pgxpool.Pool, *httptest.Server
 	}
 	a := &API{
 		Pool: pool, Region: reg, Source: listing.Manual{},
+		Version:  "abc123",
 		Listings: &listing.Store{Pool: pool, Limits: limits},
 		Places:   &place.Store{Pool: pool, Limits: limits},
 		Logger:   slog.New(slog.DiscardHandler),
@@ -359,5 +360,16 @@ func TestRegion(t *testing.T) {
 	decode(t, resp.body, &got)
 	if resp.status != http.StatusOK || got.Name != "Thuringia" || got.Map.Zoom != 13 || len(got.Outline) != 1 || len(got.Outline[0]) < 100 {
 		t.Errorf("region = %d %+v", resp.status, got)
+	}
+}
+
+func TestVersion(t *testing.T) {
+	t.Parallel()
+	_, server := setup(t, visitor.Limits{PerHour: 10, PerDay: 10, SiteWidePerDay: 10})
+	resp := newBrowser(t, server).do(http.MethodGet, "/api/version", "", "")
+	var got map[string]string
+	decode(t, resp.body, &got)
+	if resp.status != http.StatusOK || got["version"] != "abc123" {
+		t.Errorf("GET /api/version = %d %v", resp.status, got)
 	}
 }
