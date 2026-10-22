@@ -89,6 +89,53 @@ terraform destroy                              # removes everything
 On "Out of host capacity", free Arm servers are short in that availability domain: set
 `availability_domain = 2` (or 3) in `terraform.tfvars` and apply again.
 
+## Deploying the app
+
+The cluster deploys the app itself: Flux, running inside it, watches this repo and the
+container registry. Merging to `main` is the whole deploy.
+1. CI tests the commit, builds the three arm64 images, and publishes the Helm chart in
+   `deploy/chart` to GHCR as version `0.1.<run number>`, with the commit as its app
+   version.
+2. Within a minute, Flux sees the higher chart version and upgrades the release.
+3. Helm replaces the pods, each old one only after its replacement is ready. A release
+   that isn't ready within 10 minutes is rolled back.
+4. CI's last job polls `https://<host>/api/version` until it reports the commit, and fails
+   after 15 minutes if it never does.
+
+Setting up a new server, once, with `kubectl` working as above:
+
+```sh
+# The database password, generated in the cluster and stored nowhere else. First, so the
+# app finds it when Flux installs it.
+kubectl create namespace apartment-finder
+kubectl -n apartment-finder create secret generic apartment-finder-db \
+  --from-literal=password="$(openssl rand -hex 24)"
+
+# Flux installs itself, commits its own manifests to deploy/flux/clusters/production,
+# and gives the cluster a read-only deploy key for this repo
+GITHUB_TOKEN=$(gh auth token) flux bootstrap github --owner=MSJawad \
+  --repository=apartment-finder --branch=main --path=deploy/flux/clusters/production \
+  --personal --read-write-key=false
+```
+
+A new server also has a new IP. Put it, with dashes, in `host` in
+`deploy/flux/apps/apartment-finder.yaml`, and in the `SITE_URL` variable CI checks
+(`gh variable set SITE_URL --body https://<ip-with-dashes>.sslip.io`).
+
+The first install takes about 8 minutes: each router downloads the OpenStreetMap extract
+and builds its routing data, and the worker imports the everyday places before it starts.
+Later deploys take a minute or two.
+
+Day to day:
+
+```sh
+flux get helmreleases -A                         # what's deployed, and whether it worked
+kubectl -n apartment-finder get pods
+kubectl -n apartment-finder logs deploy/apartment-finder-api
+kubectl -n apartment-finder port-forward svc/apartment-finder-api-admin 9090
+                                                 # then http://localhost:9090/metrics
+```
+
 ## API
 
 JSON over HTTP. A visitor is identified by a cookie that the first `POST` sets; see
@@ -667,6 +714,138 @@ follows the IP instead.
 
 One more free-tier rule: Oracle may reclaim a server whose CPU, network and memory all
 stay under 20% for a week. See "Staying clear of Oracle's idle rule" below.
+
+### The cluster pulls its deploys
+
+CI never touches the cluster. Flux, running inside it, pulls what git and the registry
+say should run:
+- **CI holds no cluster credentials**, and the Kubernetes API stays closed to the
+  internet. What CI can do is publish images and charts, with a token that expires when
+  its job ends.
+- **Git is the record.** The cluster's setup (cert-manager, the certificate issuers,
+  Traefik's settings, the release) lives in `deploy/flux`, and Flux puts back anything
+  there changed by hand. A hand change to the app's own objects lasts until the next
+  release.
+- **The catch:** CI can't watch the rollout. It watches the site's version instead (see
+  "CI waits for the site, not the cluster" below).
+
+Flux, not Argo CD: both do this, but Argo CD is built around a web UI and runs more
+components. Flux is four controllers configured in YAML, using about 110 MB here, which
+suits one small server with nobody watching a dashboard.
+
+### Releases are chart versions, not commits that bump a tag
+
+CI publishes the Helm chart to GHCR as an OCI artifact, versioned `0.1.<run number>`,
+with the commit as its app version, which picks the image tag. Flux deploys the highest
+version.
+
+The usual alternative has CI commit each new image tag back to the repo for Flux to pick
+up. That needs a bot with write access to `main` and doubles its commits. Here the chart
+and images are built and released together, and git holds only what doesn't change per
+release: which chart to follow, and the server's settings.
+
+### CI waits for the site, not the cluster
+
+Since CI can't see inside the cluster, its last job polls `/api/version` until the site
+serves the commit. What that does and doesn't prove:
+- A release that fails keeps the old version serving, so CI fails with a message saying
+  where to look.
+- A newer commit that's live counts too, since it includes this one. When commits land
+  close together, the older run's check shouldn't fail just because it was overtaken.
+  A revert counts as newer as well, so a broken commit's check fails only if nothing
+  replaces it within the 15 minutes.
+- It proves the API is serving the commit, not that the whole release succeeded. If the
+  API comes up but the worker doesn't, Helm rolls everything back after CI has passed.
+  Flux can report each release's outcome to GitHub as a commit status, which would close
+  that gap, at the cost of a GitHub token kept in the cluster.
+
+### HTTPS from Let's Encrypt, on an sslip.io name
+
+- **cert-manager** gets and renews the certificate, proving control of the name over
+  plain HTTP through Traefik. Traefik redirects all other HTTP to HTTPS.
+- **sslip.io** is a public DNS service that answers `92-5-186-10.sslip.io` with
+  `92.5.186.10`. There is no domain to buy and no DNS to update when the IP changes, only
+  the name in the config.
+- **The rate limit:** Let's Encrypt caps certificates per registered domain, and
+  sslip.io isn't on the Public Suffix List, so every sslip.io user shares one limit.
+  sslip.io's documentation says Let's Encrypt raised it for them. The issuer was tested
+  against Let's Encrypt's staging service first. If the limit ever bites, DuckDNS, which
+  is on the list, is the fallback.
+- **No email on the Let's Encrypt account.** Let's Encrypt stopped sending expiry
+  warnings in 2025, and renewal is automatic.
+
+### One secret, made by hand
+
+The only secret is the database password. It's generated inside the cluster at setup
+and exists only as a Kubernetes Secret, which k3s encrypts on disk. Sealed Secrets or
+SOPS would keep an encrypted copy in git, so a rebuilt cluster gets it back. With one
+password, and a database that is rebuilt from scratch with the server anyway, that adds
+a key to manage and protects nothing.
+
+### Deploys and lost pods don't drop requests
+
+- **Two API pods.** The rolling update starts a new one and waits until it's ready
+  before stopping an old one.
+- **A stopping pod waits 5 seconds** before shutting down, so Traefik has stopped
+  sending it requests by then.
+- **A disruption budget** keeps at least one API pod through planned disruptions, such
+  as draining the server.
+
+Checked: deleting an API pod while sending requests through the public URL, 307 requests
+during the deletion and replacement were all answered.
+
+The worker is the exception: exactly one, stopped before its replacement starts. The
+geocoder's rate limit lives in its memory, so two at once would double the request rate.
+Jobs wait in Postgres for the few seconds it's away.
+
+### A broken release keeps the old one serving
+
+Tested for real by merging an image that can't start, with an entrypoint naming a missing
+binary, and reverting it afterwards (pull requests #23 to #25):
+- **The old version kept serving.** The new API pod never got ready, so the rolling
+  update never stopped an old one. A request every 2 seconds, for the 38 minutes of two
+  failed releases, their rollbacks and the revert's deploy, got an answer every time:
+  1,028 of 1,028.
+- **The deploy failed visibly.** Helm's upgrade timed out after 10 minutes, and CI's
+  deploy check failed, saying the site still served the previous commit.
+- **Flux rolled the release back** to the last good one, removing the broken pod.
+
+The test caught a bug on the way. Flux was set to roll back without retrying, and with
+no retries it rolls back only if also told to remediate the last failure. It had left
+the failed release in place, with the broken pod crash-looping beside the old ones,
+until `remediateLastFailure` was set.
+
+### The first install builds its own data
+
+- **Each router** has a setup step that downloads the extract and builds its routing
+  data onto the router's own volume, then leaves a marker. Later restarts find the
+  marker and start in seconds.
+- **The worker** has a setup step that imports the everyday places if the table is
+  empty, so it never scores listings against nothing. A weekly job refreshes them.
+
+Building the routing data in CI and shipping it in an image was the alternative. It
+would make each deploy carry about 1.3 GB of data that changes weekly at most, and tie
+refreshing the map to releasing code.
+
+The import's memory limit was set by measuring on the server: osmium's filter peaks at
+2 GiB there, because keeping the nodes that matching ways are made of takes a set sized
+to the whole range of OpenStreetMap node IDs. On a laptop, the same command reported
+42 MB. The first install hit the old 1 GiB limit, which is how that came to light.
+
+### Rendered in CI the way Flux renders it
+
+The first install failed on the cluster although CI had passed: the pod templates listed
+two labels twice. Helm quietly keeps the last copy; Flux runs every release through
+kustomize, which rejects it. CI now renders the chart through kustomize too, so that
+mistake fails a pull request instead.
+
+### Metrics stay inside the cluster
+
+`/metrics` is served on the admin port, through its own Service, which no ingress rule
+points at. Checked from outside: `/metrics` on the site answers 404 and port 9090 doesn't
+answer at all. From a pod inside the cluster, both the API and the worker answer.
+Prometheus and Grafana run on the same server but live in a separate repo,
+[synthetic-monitor](https://github.com/MSJawad/synthetic-monitor).
 
 ### Staying clear of Oracle's idle rule
 
