@@ -35,4 +35,4 @@ COPY --from=build /out/ /usr/local/bin/
 COPY config /etc/apartment-finder
 USER nonroot:nonroot
 EXPOSE 8080 9090
-ENTRYPOINT ["/usr/local/bin/api-missing"]
+ENTRYPOINT ["/usr/local/bin/api"]
