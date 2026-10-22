@@ -4,6 +4,11 @@
 //
 //	import-amenities                            # downloads the region's extract
 //	import-amenities thueringen-latest.osm.pbf  # uses a local copy
+//	import-amenities -if-empty                  # only if nothing is imported yet
+//
+// -if-empty is for the first deploy: the worker runs it before starting, so
+// a new cluster has places to score against without waiting for the weekly
+// run, and later restarts skip it after one quick count.
 //
 // Like the other commands it reads DATABASE_URL and REGION_CONFIG, and it
 // needs osmium on the PATH. It runs weekly to keep the places current.
@@ -12,6 +17,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -44,8 +50,13 @@ func main() {
 }
 
 func run() error {
-	if len(os.Args) > 2 {
-		return errors.New("usage: import-amenities [extract.osm.pbf]")
+	flags := flag.NewFlagSet("import-amenities", flag.ContinueOnError)
+	ifEmpty := flags.Bool("if-empty", false, "import only if no amenities are stored yet")
+	if err := flags.Parse(os.Args[1:]); err != nil {
+		return err
+	}
+	if flags.NArg() > 1 {
+		return errors.New("usage: import-amenities [-if-empty] [extract.osm.pbf]")
 	}
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
@@ -67,6 +78,16 @@ func run() error {
 	if err := db.Migrate(ctx, pool, logger); err != nil {
 		return err
 	}
+	if *ifEmpty {
+		n, err := amenity.Count(ctx, pool)
+		if err != nil {
+			return err
+		}
+		if n > 0 {
+			logger.LogAttrs(ctx, slog.LevelInfo, "amenities already imported", slog.Int("total", n))
+			return nil
+		}
+	}
 
 	dir, err := os.MkdirTemp("", "amenities")
 	if err != nil {
@@ -75,8 +96,8 @@ func run() error {
 	defer func() { _ = os.RemoveAll(dir) }()
 
 	var extractPath string
-	if len(os.Args) == 2 {
-		extractPath = os.Args[1]
+	if flags.NArg() == 1 {
+		extractPath = flags.Arg(0)
 	} else {
 		logger.LogAttrs(ctx, slog.LevelInfo, "downloading extract", slog.String("url", reg.OSMExtract))
 		client := &http.Client{Timeout: downloadTimeout}
