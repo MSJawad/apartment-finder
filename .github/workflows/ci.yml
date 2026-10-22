@@ -40,9 +40,11 @@ jobs:
         run: node --check internal/web/static/app.js
       - name: Install Terraform
         # The version used locally, checked against the hash HashiCorp
-        # publishes for it.
+        # publishes for it. Downloads retry on any error, since a CDN edge
+        # can fail for a moment, as get.helm.sh's once did with a
+        # certificate for another name; the hash still guards the file.
         run: |
-          curl -sSfL -o "$RUNNER_TEMP/terraform.zip" https://releases.hashicorp.com/terraform/1.16.6/terraform_1.16.6_linux_amd64.zip
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o "$RUNNER_TEMP/terraform.zip" https://releases.hashicorp.com/terraform/1.16.6/terraform_1.16.6_linux_amd64.zip
           echo "38034b38d03096399a7a1264a14561a8029b2b496fd1f169452656e53968f1b7  $RUNNER_TEMP/terraform.zip" | sha256sum -c -
           unzip -q "$RUNNER_TEMP/terraform.zip" terraform -d "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
@@ -56,9 +58,10 @@ jobs:
           terraform init -backend=false -input=false
           terraform validate
       - name: Install Helm
-        # The version used locally, checked against its published hash.
+        # The version used locally, checked against its published hash, and
+        # retried like Terraform's.
         run: |
-          curl -sSfL -o "$RUNNER_TEMP/helm.tar.gz" https://get.helm.sh/helm-v4.3.1-linux-amd64.tar.gz
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o "$RUNNER_TEMP/helm.tar.gz" https://get.helm.sh/helm-v4.3.1-linux-amd64.tar.gz
           echo "0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b  $RUNNER_TEMP/helm.tar.gz" | sha256sum -c -
           mkdir -p "$RUNNER_TEMP/bin"
           tar -xzf "$RUNNER_TEMP/helm.tar.gz" -C "$RUNNER_TEMP/bin" --strip-components=1 linux-amd64/helm
@@ -157,7 +160,7 @@ jobs:
         # the app and importer images the chart runs.
         if: env.PUSH == 'true'
         run: |
-          curl -sSfL -o "$RUNNER_TEMP/helm.tar.gz" https://get.helm.sh/helm-v4.3.1-linux-amd64.tar.gz
+          curl -sSfL --retry 5 --retry-all-errors --retry-delay 5 -o "$RUNNER_TEMP/helm.tar.gz" https://get.helm.sh/helm-v4.3.1-linux-amd64.tar.gz
           echo "0403a88ae20913d11b10a2467b50087721fea7581736da6b9d3992f5357fe54b  $RUNNER_TEMP/helm.tar.gz" | sha256sum -c -
           tar -xzf "$RUNNER_TEMP/helm.tar.gz" -C "$RUNNER_TEMP" --strip-components=1 linux-amd64/helm
           echo "$GITHUB_TOKEN" | "$RUNNER_TEMP/helm" registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
