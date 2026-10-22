@@ -34,7 +34,7 @@ export REGION_CONFIG=config/thuringia.json
 curl 'localhost:5001/route/v1/foot/11.0357,50.9774;11.0377,50.9728'  # walk (bike is on :5002)
 
 # Load the everyday places (supermarkets, stops, parks...) from the same extract
-go run ./cmd/import-amenities data/osm/region.osm.pbf
+go run ./cmd/import-amenities data/osm/region.osm.pbf  # without an argument, it downloads the extract itself
 
 go run ./cmd/api             # public on :8080, admin on :9090
 OSRM_WALK_URL=http://localhost:5001 OSRM_BIKE_URL=http://localhost:5002 ADMIN_ADDR=:9091 \
@@ -135,11 +135,26 @@ URL (`/api/listings/42`). Every distinct label value is a new time series in
 Prometheus, so labelling by raw path would let anyone scanning random URLs grow memory
 without limit. Unknown HTTP methods collapse to `other` for the same reason.
 
-### One image, two binaries
+### Three images, built for arm64
 
-The api and worker ship in one image; the worker's Kubernetes Deployment overrides the
-entrypoint. Both always deploy from the same commit, and CI builds and pushes one image
-instead of two. The cost is a few MB of unused binary in each container.
+CI publishes three images to GHCR:
+- **`apartment-finder`**: the api and the worker. The worker's Kubernetes Deployment
+  overrides the entrypoint, so both always deploy from the same commit; the cost is a
+  few MB of unused binary in each container. It's distroless and tagged with the commit.
+- **`apartment-finder-importer`**: the weekly amenity import. It needs osmium, which
+  can't live in a distroless image, so it gets its own Debian-based target in the same
+  Dockerfile, with osmium pinned to an exact package version. Also tagged with the
+  commit.
+- **`apartment-finder-postgis`**: the database, tagged with a hash of its Dockerfile
+  rather than the commit. An unchanged database image keeps its tag, so an app deploy
+  never restarts Postgres; the image is rebuilt only when its Dockerfile changes.
+
+The region config is built into the app and importer images, so the code and the
+config it was tested with always ship together.
+
+Go cross-compiles without help, but the importer and PostGIS images run `apt-get`
+inside arm64 images, so CI emulates arm64 with QEMU for those steps. Docker's
+`setup-qemu-action` and its emulator image are both pinned.
 
 ### Cross-compiling for arm64
 
