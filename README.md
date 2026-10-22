@@ -10,8 +10,62 @@ router, and k3s on Oracle Cloud's free tier.
 
 ## Status
 
-Work in progress. v1 is done when a stranger can open the URL, add a listing, and see it
-scored on the map.
+v1 is live at **https://92-5-186-10.sslip.io**: add a listing and it's scored on the map
+within seconds. The address is the server's IP, so it would change if the server were
+ever rebuilt.
+
+## Architecture
+
+What runs, all on one free Arm server. Arrows point from the caller:
+
+```mermaid
+flowchart TB
+    browser(["Browser"])
+
+    subgraph server["Oracle Cloud Arm server, running k3s"]
+        traefik["Traefik<br/>HTTPS via<br/>Let's Encrypt"]
+        api["API, 2 pods<br/>page and JSON"]
+        worker["Worker, 1 pod<br/>runs the jobs"]
+        postgres[("PostgreSQL<br/>+ PostGIS<br/>listings, jobs<br/>places, cache")]
+        osrm["OSRM routers<br/>walk and bike"]
+        importer["Places import<br/>every week"]
+    end
+
+    subgraph public["Public services built on OpenStreetMap"]
+        photon["Photon<br/>geocoder"]
+        geofabrik["Geofabrik<br/>map extracts"]
+    end
+
+    browser -->|HTTPS| traefik --> api
+    api -->|"reads, queues jobs"| postgres
+    worker -->|"claims jobs, stores results"| postgres
+    worker -->|"travel times"| osrm
+    worker -->|"geocodes addresses"| photon
+    importer -->|"everyday places"| postgres
+    importer -->|"downloads the extract"| geofabrik
+    osrm -->|"downloads the extract<br/>on first start"| geofabrik
+```
+
+Adding a listing: the API stores it, with a job to enrich it, in one transaction and
+answers at once. The worker claims the job, geocodes the address with Photon, finds the
+nearest supermarket, stop, park and so on in PostGIS, and asks the routers how long the
+walk or ride to each takes. It stores those measurements, never a score: each read
+scores the listings from the measurements and the visitor's weights. The page polls
+until the listing is ready, which takes about a second.
+
+How a change ships:
+
+```mermaid
+flowchart TB
+    merge(["Merge to main"]) --> actions["GitHub Actions<br/>test, build<br/>for arm64"]
+    actions -->|publishes| ghcr["GitHub's registry<br/>images and<br/>chart 0.1.N"]
+    ghcr -->|"pulled by"| flux["Flux<br/>in the cluster"]
+    flux -->|"upgrades, or<br/>rolls back a failure"| app["The app"]
+```
+
+CI's last step waits until the site serves the new commit. CI never holds credentials
+for the server or the cloud: the cluster pulls its releases, and Terraform runs only
+from a laptop.
 
 ## Running locally
 
