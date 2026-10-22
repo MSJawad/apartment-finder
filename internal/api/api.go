@@ -36,6 +36,9 @@ type API struct {
 	// Source reads the add-listing form; see listing.Source.
 	Source listing.Source
 	Logger *slog.Logger
+	// Version is the git commit the server was built from. After a deploy,
+	// CI polls GET /api/version until it shows the new commit.
+	Version string
 }
 
 // Register adds the API's routes to mux.
@@ -54,6 +57,7 @@ func (a *API) Register(mux *http.ServeMux) {
 	handle := func(pattern string, h http.HandlerFunc) {
 		mux.Handle(pattern, protection.Handler(h))
 	}
+	handle("GET /api/version", a.getVersion)
 	handle("GET /api/region", a.getRegion)
 	handle("GET /api/listings", a.listListings)
 	handle("POST /api/listings", a.addListing)
@@ -158,6 +162,10 @@ func toAPIError(err error) *apiError {
 			Message: fmt.Sprintf("You can have up to %d places. Delete one to add another.", place.MaxPerVisitor)}
 	}
 	return nil
+}
+
+func (a *API) getVersion(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"version": a.Version})
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

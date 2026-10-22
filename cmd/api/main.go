@@ -73,6 +73,7 @@ func run() error {
 		Places:   &place.Store{Pool: pool, Limits: limits},
 		Source:   listing.Manual{},
 		Logger:   logger,
+		Version:  version,
 	}
 	a.Register(public)
 	if err := web.Register(public); err != nil {
