@@ -37,11 +37,14 @@ spec:
   upgrade:
     timeout: 10m
     cleanupOnFail: true
-    # A release whose pods don't become ready is rolled back at once, and
-    # not retried until a new version arrives. The old pods never stopped
-    # serving: the rolling update waits for new ones to be ready first.
+    # A release whose pods don't become ready is rolled back, and not
+    # retried until a new version arrives. With no retries, Flux rolls back
+    # only when told to remediate the last failure; by default it leaves
+    # the failed release in place. The old pods never stopped serving: the
+    # rolling update waits for new ones to be ready first.
     remediation:
       retries: 0
+      remediateLastFailure: true
       strategy: rollback
   values:
     # The server's public IP with dashes, resolved by sslip.io. It changes
