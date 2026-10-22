@@ -206,6 +206,7 @@ JSON over HTTP. A visitor is identified by a cookie that the first `POST` sets; 
 | `GET /api/places` | Your personal places, such as work, each with the `criterion` key it scores under |
 | `POST /api/places` | Add a place: `name`, `address`, `mode` (`walk` or `bike`). Answers `202 Accepted` |
 | `DELETE /api/places/{id}` | Delete one of your places |
+| `GET /api/version` | The commit this server runs, which CI checks after a deploy |
 
 Errors are `{"error": "...", "fields": {"rooms": "..."}}`, with `fields` naming each
 invalid field. Status codes: 400 for invalid input, 403 for a request from another site,
@@ -242,10 +243,11 @@ CI publishes three images to GHCR:
 - **`apartment-finder`**: the api and the worker. The worker's Kubernetes Deployment
   overrides the entrypoint, so both always deploy from the same commit; the cost is a
   few MB of unused binary in each container. It's distroless and tagged with the commit.
-- **`apartment-finder-importer`**: the weekly amenity import. It needs osmium, which
-  can't live in a distroless image, so it gets its own Debian-based target in the same
-  Dockerfile, with osmium pinned to an exact package version. Also tagged with the
-  commit.
+- **`apartment-finder-importer`**: the amenity import, run weekly and as the worker's
+  first step on a new server, and the routers' download of the map extract. It needs
+  osmium, which can't live in a distroless image, so it gets its own Debian-based target
+  in the same Dockerfile, with osmium pinned to an exact package version. Also tagged
+  with the commit.
 - **`apartment-finder-postgis`**: the database, tagged with a hash of its Dockerfile
   rather than the commit. An unchanged database image keeps its tag, so an app deploy
   never restarts Postgres; the image is rebuilt only when its Dockerfile changes.
@@ -601,8 +603,7 @@ standard way to query OpenStreetMap. Testing it changed the plan:
 A backend worker calling it for every new listing doesn't fit either.
 
 So the places are imported instead:
-- **Same source data.** The worker already needs the region's OpenStreetMap extract for
-  routing. The extract is filtered down to the seven categories and loaded into an
+- **Same source data.** Routing already needs the region's OpenStreetMap extract. The extract is filtered down to the seven categories and loaded into an
   `amenities` table in PostGIS, where a weekly job refreshes it.
 - **One indexed query.** "The five nearest supermarkets" becomes a single query: the GiST
   index answers `ORDER BY geom <-> point` (nearest-neighbour search) without scanning the
