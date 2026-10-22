@@ -1,0 +1,19 @@
+# Settings for the Traefik ingress k3s ships. Plain HTTP is redirected to
+# HTTPS, except Let's Encrypt's challenge requests, which cert-manager answers
+# over HTTP.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    ports:
+      web:
+        allowACMEByPass: true
+        http:
+          redirections:
+            entryPoint:
+              to: websecure
+              scheme: https
+              permanent: true
