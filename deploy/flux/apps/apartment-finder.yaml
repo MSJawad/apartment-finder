@@ -1,0 +1,50 @@
+# The app. CI publishes each build on main as a chart version 0.1.<run
+# number>; Flux checks the registry every minute and upgrades to the highest.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: apartment-finder
+---
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: apartment-finder
+  namespace: apartment-finder
+spec:
+  interval: 1m
+  url: oci://ghcr.io/msjawad/charts/apartment-finder
+  ref:
+    semver: ">=0.1.0"
+  layerSelector:
+    mediaType: application/vnd.cncf.helm.chart.content.v1.tar+gzip
+    operation: copy
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: apartment-finder
+  namespace: apartment-finder
+spec:
+  interval: 10m
+  chartRef:
+    kind: OCIRepository
+    name: apartment-finder
+  install:
+    # The first install prepares the routing data and imports the amenities.
+    timeout: 20m
+    remediation:
+      retries: 3
+  upgrade:
+    timeout: 10m
+    cleanupOnFail: true
+    # A release whose pods don't become ready is rolled back at once, and
+    # not retried until a new version arrives. The old pods never stopped
+    # serving: the rolling update waits for new ones to be ready first.
+    remediation:
+      retries: 0
+      strategy: rollback
+  values:
+    # The server's public IP with dashes, resolved by sslip.io. It changes
+    # only if Terraform replaces the server.
+    host: 92-5-186-10.sslip.io
+    clusterIssuer: letsencrypt
