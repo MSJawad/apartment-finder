@@ -48,8 +48,13 @@ postgres:
 
 osrm:
   storage: 2Gi
+  # A setup step's request counts for its pod for as long as the pod runs,
+  # so 500m here held a quarter of the server's CPU per router, and the
+  # server ran out of CPU to schedule anything. With no CPU limit, the step
+  # still uses every idle core; the request only sets its share when the
+  # CPU is contended. Memory stays at the measured peak.
   prepare:
-    requests: { cpu: 500m, memory: 2Gi }
+    requests: { cpu: 50m, memory: 2Gi }
     limits: { memory: 2560Mi }
   serve:
     requests: { cpu: 50m, memory: 512Mi }
