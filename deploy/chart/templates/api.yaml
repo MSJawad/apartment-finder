@@ -20,7 +20,6 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "af.labels" . | nindent 8 }}
         {{- include "af.selector" (dict "root" . "component" "api") | nindent 8 }}
     spec:
       securityContext:

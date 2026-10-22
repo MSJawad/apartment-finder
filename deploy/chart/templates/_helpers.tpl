@@ -6,7 +6,11 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
-{{/* Selector labels for one component, e.g. "api". */}}
+{{/*
+Selector labels for one component, e.g. "api". Pods carry only these: the
+version label changes with every commit, so on a pod it would restart the
+database and the routers on every deploy.
+*/}}
 {{- define "af.selector" -}}
 app.kubernetes.io/name: apartment-finder
 app.kubernetes.io/instance: {{ .root.Release.Name }}
