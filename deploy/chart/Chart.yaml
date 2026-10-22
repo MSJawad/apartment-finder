@@ -1,0 +1,7 @@
+apiVersion: v2
+name: apartment-finder
+description: Scores apartment listings by rent, size and the walk or ride to everyday places.
+type: application
+# CI packages each build as 0.1.<run number>, with the commit as appVersion.
+version: 0.1.0
+appVersion: "dev"

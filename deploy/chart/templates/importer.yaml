@@ -1,0 +1,40 @@
+# Refreshes the everyday places weekly from a fresh OpenStreetMap extract.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-import-amenities
+  labels:
+    {{- include "af.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.importer.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 3600
+      template:
+        metadata:
+          labels:
+            {{- include "af.labels" . | nindent 12 }}
+            {{- include "af.selector" (dict "root" . "component" "import-amenities") | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          securityContext:
+            {{- include "af.podSecurity" . | nindent 12 }}
+          containers:
+            - name: import-amenities
+              image: {{ include "af.importerImage" . }}
+              env:
+                {{- include "af.databaseEnv" . | nindent 16 }}
+              resources:
+                {{- toYaml .Values.importer.resources | nindent 16 }}
+              securityContext:
+                {{- include "af.containerSecurity" . | nindent 16 }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir: {}
