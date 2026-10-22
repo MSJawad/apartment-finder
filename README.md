@@ -666,5 +666,19 @@ replaced. Oracle's docs don't list a reserved IP as Always Free, so the deployme
 follows the IP instead.
 
 One more free-tier rule: Oracle may reclaim a server whose CPU, network and memory all
-stay under 20% for a week. An empty cluster uses about 10% of the memory, so the deployed
-app has to keep memory above 20% by design, not by luck.
+stay under 20% for a week. See "Staying clear of Oracle's idle rule" below.
+
+### Staying clear of Oracle's idle rule
+
+Oracle may reclaim an Arm server whose CPU, network and memory all stay under 20% for a
+week. CPU and network will, for a site this quiet, so memory decides.
+
+The plan was a 1 GB Postgres cache, but Linux only counts shared memory once it's used,
+and this little data never fills it. With the app deployed, the server measured 22%,
+too close to the line. Prometheus and Grafana from synthetic-monitor, running on the
+same server, should add enough; the server will be measured again once they're running.
+The other options considered:
+- **A Pay As You Go account**, which Always Free resources stay free on. A 2023 notice
+  from Oracle said this prevents reclaiming, but its current docs don't say so.
+- **A pod that just holds memory.** Predictable, but it exists only to get past the
+  check.
