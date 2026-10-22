@@ -8,9 +8,13 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels its previous, now outdated run.
+# A new push to a pull request cancels its previous, now outdated run. Runs
+# on main each get their own group and go ahead at once: a run waiting on a
+# failed deploy must not hold back the fix pushed after it. Running them side
+# by side is safe, since the cluster deploys the highest chart version
+# whatever order they finish in.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
