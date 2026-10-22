@@ -57,6 +57,12 @@ osrm:
 importer:
   # Weekly, early on Monday.
   schedule: "17 3 * * 1"
+  # osmium's filter peaks at 2 GiB for under a minute, measured on the
+  # server: keeping the nodes that matching ways are made of takes a set
+  # sized to the whole range of OpenStreetMap node IDs, so it grows slowly
+  # as OSM does. The request stays small because these settings also cover
+  # the worker's first-import step, and a step's request counts for its pod
+  # for as long as the pod runs; the server has the room when imports run.
   resources:
     requests: { cpu: 100m, memory: 256Mi }
-    limits: { memory: 1Gi }
+    limits: { memory: 3Gi }
