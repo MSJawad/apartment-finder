@@ -38,8 +38,9 @@ worker:
 
 postgres:
   storage: 10Gi
-  # Postgres's own cache. A generous one keeps the data in memory, and keeps
-  # the server's memory use above the line where Oracle counts it as idle.
+  # Postgres's own cache: room to keep all the data in memory. It takes up
+  # memory only as data fills it, so with this little data it doesn't help
+  # with Oracle's idle rule (see the README).
   sharedBuffers: 1GB
   resources:
     requests: { cpu: 100m, memory: 1536Mi }
