@@ -1,0 +1,36 @@
+# What Flux keeps applied to the cluster, from this repository, in order:
+# cluster-wide tools, then their settings, then the app (apps.yaml).
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infrastructure-controllers
+  namespace: flux-system
+spec:
+  interval: 1h
+  retryInterval: 1m
+  timeout: 10m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./deploy/flux/infrastructure/controllers
+  prune: true
+  wait: true
+---
+# The issuers are cert-manager objects, so they wait until it is running.
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: infrastructure-configs
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infrastructure-controllers
+  interval: 1h
+  retryInterval: 1m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  path: ./deploy/flux/infrastructure/configs
+  prune: true
+  wait: true
