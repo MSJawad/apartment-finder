@@ -73,11 +73,13 @@ jobs:
       - name: Check the Helm chart
         # Flux runs every release through kustomize, which, unlike Helm,
         # rejects a key given twice, so render it the same way. kubectl
-        # comes with the runner.
+        # comes with the runner. The ServiceMonitor is rendered only on a
+        # cluster that has the kind, so declare it.
         run: |
           helm lint --strict deploy/chart --set host=ci.example.sslip.io
           mkdir "$RUNNER_TEMP/chart"
-          helm template apartment-finder deploy/chart --set host=ci.example.sslip.io > "$RUNNER_TEMP/chart/all.yaml"
+          helm template apartment-finder deploy/chart --set host=ci.example.sslip.io \
+            --api-versions monitoring.coreos.com/v1/ServiceMonitor > "$RUNNER_TEMP/chart/all.yaml"
           echo 'resources: [all.yaml]' > "$RUNNER_TEMP/chart/kustomization.yaml"
           kubectl kustomize "$RUNNER_TEMP/chart" > /dev/null
       - name: Check the chart's PostGIS image matches its Dockerfile

@@ -979,4 +979,7 @@ mistake fails a pull request instead.
 points at. Checked from outside: `/metrics` on the site answers 404 and port 9090 doesn't
 answer at all. From a pod inside the cluster, both the API and the worker answer.
 Prometheus and Grafana run on the same server but live in a separate repo,
-[synthetic-monitor](https://github.com/MSJawad/synthetic-monitor).
+[synthetic-monitor](https://github.com/MSJawad/synthetic-monitor). The chart joins in
+with a ServiceMonitor, which tells that Prometheus to scrape both admin Services. It's
+added only when the cluster has the ServiceMonitor kind, so the chart still installs
+on a cluster without Prometheus.

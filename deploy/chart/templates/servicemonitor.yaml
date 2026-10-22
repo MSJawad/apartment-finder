@@ -1,0 +1,23 @@
+{{- /*
+Has the cluster's Prometheus, which the synthetic-monitor repository
+installs, scrape the API and the worker. It selects all of this release's
+Services, but only the two admin Services have a port named "admin", so only
+they become targets. Rendered only when the cluster has the ServiceMonitor
+kind, so the chart still installs on a cluster without Prometheus.
+*/ -}}
+{{- if .Capabilities.APIVersions.Has "monitoring.coreos.com/v1/ServiceMonitor" }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "af.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: apartment-finder
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  endpoints:
+    - port: admin
+      path: /metrics
+{{- end }}
