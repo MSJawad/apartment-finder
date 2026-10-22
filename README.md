@@ -842,7 +842,7 @@ week. CPU and network will, for a site this quiet, so memory decides.
 The plan was a 1 GB Postgres cache, but Linux only counts shared memory once it's used,
 and this little data never fills it. With the app deployed, the server measured 22%,
 too close to the line. Prometheus and Grafana from synthetic-monitor, running on the
-same server, should add enough; the server will be measured again once they're running.
+same server, were expected to add enough, and did: with them running, it measured 34%.
 The other options considered:
 - **A Pay As You Go account**, which Always Free resources stay free on. A 2023 notice
   from Oracle said this prevents reclaiming, but its current docs don't say so.
