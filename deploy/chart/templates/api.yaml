@@ -1,0 +1,129 @@
+# The public API and page. Two replicas, replaced one at a time: a new pod
+# must pass its readiness check before an old one goes, so a deploy or a
+# deleted pod causes no downtime.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-api
+  labels:
+    {{- include "af.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.api.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      {{- include "af.selector" (dict "root" . "component" "api") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "af.labels" . | nindent 8 }}
+        {{- include "af.selector" (dict "root" . "component" "api") | nindent 8 }}
+    spec:
+      securityContext:
+        {{- include "af.podSecurity" . | nindent 8 }}
+      containers:
+        - name: api
+          image: {{ include "af.appImage" . }}
+          env:
+            - name: ADDR
+              value: ":8080"
+            - name: ADMIN_ADDR
+              value: ":9090"
+            {{- include "af.databaseEnv" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: admin
+              containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+            periodSeconds: 10
+          lifecycle:
+            # The ingress learns a pod is going a moment after it starts
+            # shutting down; waiting first lets it stop sending requests.
+            preStop:
+              sleep:
+                seconds: 5
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          securityContext:
+            {{- include "af.containerSecurity" . | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-api
+  labels:
+    {{- include "af.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "af.selector" (dict "root" . "component" "api") | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Probes and metrics, reachable only inside the cluster: no ingress routes to
+# this Service, so /metrics never faces the internet.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-api-admin
+  labels:
+    {{- include "af.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "af.selector" (dict "root" . "component" "api") | nindent 4 }}
+  ports:
+    - name: admin
+      port: 9090
+      targetPort: admin
+---
+# Voluntary disruptions, such as draining the node, must leave one API pod.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Release.Name }}-api
+  labels:
+    {{- include "af.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      {{- include "af.selector" (dict "root" . "component" "api") | nindent 6 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "af.labels" . | nindent 4 }}
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.clusterIssuer }}
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [{{ required "host is required, e.g. 92-5-186-10.sslip.io" .Values.host | quote }}]
+      secretName: {{ .Release.Name }}-tls
+  rules:
+    - host: {{ .Values.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Release.Name }}-api
+                port:
+                  name: http

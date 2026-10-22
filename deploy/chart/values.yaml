@@ -1,0 +1,62 @@
+# The site's hostname. With sslip.io it's the server's IP with dashes, such as
+# 92-5-186-10.sslip.io, which resolves to that IP with no DNS to set up.
+host: ""
+
+# The cert-manager ClusterIssuer that gets the site's certificate.
+clusterIssuer: letsencrypt
+
+# The Secret holding the database password, under "password". It is created
+# once when setting up the cluster (see the README), never stored in the repo.
+databaseSecret: apartment-finder-db
+
+image:
+  app: ghcr.io/msjawad/apartment-finder
+  importer: ghcr.io/msjawad/apartment-finder-importer
+  # The app and importer tag: the commit, which CI packages as appVersion.
+  tag: ""
+  # Tagged by a hash of deploy/postgis/Dockerfile; CI checks they match.
+  postgis: ghcr.io/msjawad/apartment-finder-postgis:pg18-371c43fb463c
+  osrm: ghcr.io/project-osrm/osrm-backend:v6.0.0@sha256:729461bcc9ae9e6aafa92c0f93db9b060a32e85d5e72092c01ae4a4a9f1eb564
+
+regionConfig: /etc/apartment-finder/thuringia.json
+logLevel: info
+
+# Memory requests and limits follow measurements: the routers' preparation
+# peaks at 1.9 GiB and each serves in 0.4 GiB. There are no CPU limits, which
+# only throttle; requests reserve a share.
+api:
+  # Two, so one can be replaced or deleted without the site going down.
+  replicas: 2
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+worker:
+  resources:
+    requests: { cpu: 50m, memory: 64Mi }
+    limits: { memory: 256Mi }
+
+postgres:
+  storage: 10Gi
+  # Postgres's own cache. A generous one keeps the data in memory, and keeps
+  # the server's memory use above the line where Oracle counts it as idle.
+  sharedBuffers: 1GB
+  resources:
+    requests: { cpu: 100m, memory: 1536Mi }
+    limits: { memory: 2Gi }
+
+osrm:
+  storage: 2Gi
+  prepare:
+    requests: { cpu: 500m, memory: 2Gi }
+    limits: { memory: 2560Mi }
+  serve:
+    requests: { cpu: 50m, memory: 512Mi }
+    limits: { memory: 1Gi }
+
+importer:
+  # Weekly, early on Monday.
+  schedule: "17 3 * * 1"
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }

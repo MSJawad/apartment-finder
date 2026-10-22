@@ -1,0 +1,88 @@
+# The worker. Exactly one: the geocoder's rate limit lives in its memory, so
+# a second worker would double the request rate. Recreate, not a rolling
+# update, so old and new never overlap.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-worker
+  labels:
+    {{- include "af.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "af.selector" (dict "root" . "component" "worker") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "af.labels" . | nindent 8 }}
+        {{- include "af.selector" (dict "root" . "component" "worker") | nindent 8 }}
+    spec:
+      securityContext:
+        {{- include "af.podSecurity" . | nindent 8 }}
+      initContainers:
+        # A new cluster gets its places before the worker starts scoring;
+        # afterwards this is one quick count. The weekly CronJob refreshes
+        # them.
+        - name: import-amenities
+          image: {{ include "af.importerImage" . }}
+          args: ["-if-empty"]
+          env:
+            {{- include "af.databaseEnv" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.importer.resources | nindent 12 }}
+          securityContext:
+            {{- include "af.containerSecurity" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: worker
+          image: {{ include "af.appImage" . }}
+          command: ["/usr/local/bin/worker"]
+          env:
+            - name: ADMIN_ADDR
+              value: ":9090"
+            - name: OSRM_WALK_URL
+              value: http://{{ .Release.Name }}-osrm-walk:5000
+            - name: OSRM_BIKE_URL
+              value: http://{{ .Release.Name }}-osrm-bike:5000
+            {{- include "af.databaseEnv" . | nindent 12 }}
+          ports:
+            - name: admin
+              containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+          securityContext:
+            {{- include "af.containerSecurity" . | nindent 12 }}
+      volumes:
+        # osmium and the download need scratch space; the root filesystem is
+        # read-only.
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-worker-admin
+  labels:
+    {{- include "af.labels" . | nindent 4 }}
+spec:
+  selector:
+    {{- include "af.selector" (dict "root" . "component" "worker") | nindent 4 }}
+  ports:
+    - name: admin
+      port: 9090
+      targetPort: admin

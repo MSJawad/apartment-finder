@@ -1,0 +1,124 @@
+{{- /*
+One router per travel mode. Each prepares its own routing data on first
+start, in two init containers: one downloads the region's extract, checked
+against Geofabrik's checksum; the other runs OSRM's preparation for the mode's
+profile. A marker file makes later starts skip both. To refresh the map data,
+delete the router's volume.
+*/ -}}
+{{- range $mode, $profile := dict "walk" "foot" "bike" "bicycle" }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $.Release.Name }}-osrm-{{ $mode }}
+  labels:
+    {{- include "af.labels" $ | nindent 4 }}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: {{ $.Values.osrm.storage }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $.Release.Name }}-osrm-{{ $mode }}
+  labels:
+    {{- include "af.labels" $ | nindent 4 }}
+spec:
+  selector:
+    {{- include "af.selector" (dict "root" $ "component" (printf "osrm-%s" $mode)) | nindent 4 }}
+  ports:
+    - name: http
+      port: 5000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $.Release.Name }}-osrm-{{ $mode }}
+  labels:
+    {{- include "af.labels" $ | nindent 4 }}
+spec:
+  replicas: 1
+  # The data volume can be attached to one pod at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "af.selector" (dict "root" $ "component" (printf "osrm-%s" $mode)) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "af.labels" $ | nindent 8 }}
+        {{- include "af.selector" (dict "root" $ "component" (printf "osrm-%s" $mode)) | nindent 8 }}
+    spec:
+      securityContext:
+        {{- include "af.podSecurity" $ | nindent 8 }}
+      initContainers:
+        - name: download
+          image: {{ include "af.importerImage" $ }}
+          command:
+            - sh
+            - -c
+            - "[ -f /data/.prepared ] || [ -f /data/region.osm.pbf ] || download-extract /data/region.osm.pbf"
+          env:
+            - name: REGION_CONFIG
+              value: {{ $.Values.regionConfig }}
+          securityContext:
+            {{- include "af.containerSecurity" $ | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+        - name: prepare
+          image: {{ $.Values.image.osrm }}
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              [ -f /data/.prepared ] && exit 0
+              osrm-extract -p /opt/{{ $profile }}.lua /data/region.osm.pbf
+              osrm-partition /data/region.osrm
+              osrm-customize /data/region.osrm
+              rm /data/region.osm.pbf
+              touch /data/.prepared
+          resources:
+            {{- toYaml $.Values.osrm.prepare | nindent 12 }}
+          securityContext:
+            {{- include "af.containerSecurity" $ | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: osrm
+          image: {{ $.Values.image.osrm }}
+          command: ["osrm-routed", "--algorithm", "mld", "/data/region.osrm"]
+          ports:
+            - name: http
+              containerPort: 5000
+          # osrm-routed opens its port only once the data is loaded.
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 20
+          resources:
+            {{- toYaml $.Values.osrm.serve | nindent 12 }}
+          securityContext:
+            {{- include "af.containerSecurity" $ | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ $.Release.Name }}-osrm-{{ $mode }}
+        - name: tmp
+          emptyDir: {}
+{{- end }}
