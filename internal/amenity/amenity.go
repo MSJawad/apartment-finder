@@ -165,3 +165,12 @@ func Nearest(ctx context.Context, db Querier, category string, lat, lon, radiusM
 	}
 	return candidates, nil
 }
+
+// Count returns how many amenities are stored.
+func Count(ctx context.Context, db *pgxpool.Pool) (int, error) {
+	var n int
+	if err := db.QueryRow(ctx, "SELECT count(*) FROM amenities").Scan(&n); err != nil {
+		return 0, fmt.Errorf("count amenities: %w", err)
+	}
+	return n, nil
+}

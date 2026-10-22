@@ -93,6 +93,9 @@ func TestReplaceSwapsTheWholeSet(t *testing.T) {
 	pool := dbtest.New(t)
 	ctx := t.Context()
 
+	if n, err := amenity.Count(ctx, pool); err != nil || n != 0 {
+		t.Fatalf("Count() before any import = %d, %v", n, err)
+	}
 	if err := amenity.Replace(ctx, pool, []amenity.Amenity{point(1, "gym", 0.001, 0)}); err != nil {
 		t.Fatal(err)
 	}
@@ -109,5 +112,8 @@ func TestReplaceSwapsTheWholeSet(t *testing.T) {
 	}
 	if len(got) != 1 || got[0].Name != "gym 2" {
 		t.Errorf("after replacing: %+v, want only gym 2", got)
+	}
+	if n, err := amenity.Count(ctx, pool); err != nil || n != 1 {
+		t.Errorf("Count() = %d, %v; want 1", n, err)
 	}
 }

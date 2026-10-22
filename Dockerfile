@@ -23,7 +23,7 @@ ARG OSMIUM_VERSION=1.18.0-1
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates osmium-tool="$OSMIUM_VERSION" \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=build /out/import-amenities /usr/local/bin/
+COPY --from=build /out/import-amenities /out/download-extract /usr/local/bin/
 COPY config /etc/apartment-finder
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/import-amenities"]
