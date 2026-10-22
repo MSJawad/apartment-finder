@@ -2,7 +2,8 @@
 // against from an OpenStreetMap extract into the database, replacing the
 // previous set:
 //
-//	import-amenities thueringen-latest.osm.pbf
+//	import-amenities                            # downloads the region's extract
+//	import-amenities thueringen-latest.osm.pbf  # uses a local copy
 //
 // Like the other commands it reads DATABASE_URL and REGION_CONFIG, and it
 // needs osmium on the PATH. It runs weekly to keep the places current.
@@ -13,13 +14,16 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/MSJawad/apartment-finder/internal/amenity"
 	"github.com/MSJawad/apartment-finder/internal/config"
 	"github.com/MSJawad/apartment-finder/internal/db"
+	"github.com/MSJawad/apartment-finder/internal/extract"
 	"github.com/MSJawad/apartment-finder/internal/observability"
 	"github.com/MSJawad/apartment-finder/internal/region"
 )
@@ -27,6 +31,10 @@ import (
 // version is the git commit this binary was built from, set with
 // -ldflags "-X main.version=<sha>".
 var version = "dev"
+
+// downloadTimeout bounds the whole extract download: about 160 MB for
+// Thuringia, which takes seconds from a data centre.
+const downloadTimeout = 10 * time.Minute
 
 func main() {
 	if err := run(); err != nil {
@@ -36,10 +44,9 @@ func main() {
 }
 
 func run() error {
-	if len(os.Args) != 2 {
-		return errors.New("usage: import-amenities <extract.osm.pbf>")
+	if len(os.Args) > 2 {
+		return errors.New("usage: import-amenities [extract.osm.pbf]")
 	}
-	extract := os.Args[1]
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
 		return err
@@ -66,7 +73,18 @@ func run() error {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	path, err := amenity.Export(ctx, reg, extract, dir)
+
+	var extractPath string
+	if len(os.Args) == 2 {
+		extractPath = os.Args[1]
+	} else {
+		logger.LogAttrs(ctx, slog.LevelInfo, "downloading extract", slog.String("url", reg.OSMExtract))
+		client := &http.Client{Timeout: downloadTimeout}
+		if extractPath, err = extract.Download(ctx, client, reg.OSMExtract, dir); err != nil {
+			return err
+		}
+	}
+	path, err := amenity.Export(ctx, reg, extractPath, dir)
 	if err != nil {
 		return err
 	}
@@ -87,7 +105,7 @@ func run() error {
 	for _, a := range amenities {
 		perCategory[a.Category]++
 	}
-	attrs := []slog.Attr{slog.String("extract", extract), slog.Int("total", len(amenities))}
+	attrs := []slog.Attr{slog.String("extract", extractPath), slog.Int("total", len(amenities))}
 	for _, c := range reg.Categories {
 		attrs = append(attrs, slog.Int(c.Key, perCategory[c.Key]))
 	}
