@@ -1,0 +1,36 @@
+# The synthetic monitor and the cluster's Prometheus and Grafana, which live
+# in their own public repository. Flux applies its deploy/flux folder once
+# the certificate issuers exist, since the status page needs one. That folder
+# is applied with Flux's own permissions, so the monitor's repository is
+# trusted as much as this one.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: synthetic-monitor
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: https://github.com/MSJawad/synthetic-monitor
+  ref:
+    branch: main
+  # Only the manifests are fetched.
+  ignore: |
+    /*
+    !/deploy/flux/
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: synthetic-monitor
+  namespace: flux-system
+spec:
+  dependsOn:
+    - name: infrastructure-configs
+  interval: 10m
+  retryInterval: 1m
+  timeout: 5m
+  sourceRef:
+    kind: GitRepository
+    name: synthetic-monitor
+  path: ./deploy/flux
+  prune: true
