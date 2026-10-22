@@ -49,7 +49,6 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "af.labels" $ | nindent 8 }}
         {{- include "af.selector" (dict "root" $ "component" (printf "osrm-%s" $mode)) | nindent 8 }}
     spec:
       securityContext:

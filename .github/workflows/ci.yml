@@ -67,9 +67,15 @@ jobs:
           tar -xzf "$RUNNER_TEMP/helm.tar.gz" -C "$RUNNER_TEMP/bin" --strip-components=1 linux-amd64/helm
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       - name: Check the Helm chart
+        # Flux runs every release through kustomize, which, unlike Helm,
+        # rejects a key given twice, so render it the same way. kubectl
+        # comes with the runner.
         run: |
           helm lint --strict deploy/chart --set host=ci.example.sslip.io
-          helm template apartment-finder deploy/chart --set host=ci.example.sslip.io > /dev/null
+          mkdir "$RUNNER_TEMP/chart"
+          helm template apartment-finder deploy/chart --set host=ci.example.sslip.io > "$RUNNER_TEMP/chart/all.yaml"
+          echo 'resources: [all.yaml]' > "$RUNNER_TEMP/chart/kustomization.yaml"
+          kubectl kustomize "$RUNNER_TEMP/chart" > /dev/null
       - name: Check the chart's PostGIS image matches its Dockerfile
         # The image is tagged by a hash of its Dockerfile; a stale tag in the
         # chart would deploy the old database image.
