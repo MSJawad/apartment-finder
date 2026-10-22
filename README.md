@@ -218,70 +218,69 @@ reached.
 
 Each non-obvious choice, with the options considered and why this one won.
 
-### Probes and metrics on a separate admin port
+**The service's internals**
 
-The api serves public traffic on `:8080` and `/healthz`, `/readyz` and `/metrics` on
-`:9090`. Only `:8080` is routed through the ingress, so metrics can't leak to the
-internet, even if an ingress rule is too broad. The alternative, one port with an
-ingress rule that blocks `/metrics`, fails open: one mistake in the rule exposes it.
+- [A job queue in Postgres, not Kafka or Redis](#a-job-queue-in-postgres-not-kafka-or-redis)
+- [Claiming jobs: SKIP LOCKED, a lease and a fencing token](#claiming-jobs-skip-locked-a-lease-and-a-fencing-token)
+- [Polling instead of LISTEN/NOTIFY](#polling-instead-of-listennotify)
+- [Migrations: a small runner instead of a library](#migrations-a-small-runner-instead-of-a-library)
+- [Integration tests: one container, one database per test](#integration-tests-one-container-one-database-per-test)
+- [Probes and metrics on a separate admin port](#probes-and-metrics-on-a-separate-admin-port)
+- [Metric labels use route patterns, not raw paths](#metric-labels-use-route-patterns-not-raw-paths)
 
-The trade-off: a probe on the admin port doesn't go through the public server. Both
-servers run in one process, and if either fails, the process exits and Kubernetes
-restarts it, so a dead public server can't go unnoticed. Admin requests aren't logged,
-because probes and scrapes every few seconds would bury real traffic.
+**Scoring and the page**
 
-### Metric labels use route patterns, not raw paths
+- [Scores use fixed thresholds, not a ranking](#scores-use-fixed-thresholds-not-a-ranking)
+- [Scores are worked out on every read](#scores-are-worked-out-on-every-read)
+- [Personal places score the trip from each listing](#personal-places-score-the-trip-from-each-listing)
+- [The page: no build step, no CDN, a strict content policy](#the-page-no-build-step-no-cdn-a-strict-content-policy)
+- [Listings come in through a Source](#listings-come-in-through-a-source)
 
-`http_requests_total` is labelled with the matched route (`/api/listings/{id}`), not the
-URL (`/api/listings/42`). Every distinct label value is a new time series in
-Prometheus, so labelling by raw path would let anyone scanning random URLs grow memory
-without limit. Unknown HTTP methods collapse to `other` for the same reason.
+**Visitors and abuse**
 
-### Three images, built for arm64
+- [Visitors are a cookie, not accounts](#visitors-are-a-cookie-not-accounts)
+- [Cross-site request forgery](#cross-site-request-forgery)
+- [Limits count additions, under one lock](#limits-count-additions-under-one-lock)
 
-CI publishes three images to GHCR:
-- **`apartment-finder`**: the api and the worker. The worker's Kubernetes Deployment
-  overrides the entrypoint, so both always deploy from the same commit; the cost is a
-  few MB of unused binary in each container. It's distroless and tagged with the commit.
-- **`apartment-finder-importer`**: the amenity import, run weekly and as the worker's
-  first step on a new server, and the routers' download of the map extract. It needs
-  osmium, which can't live in a distroless image, so it gets its own Debian-based target
-  in the same Dockerfile, with osmium pinned to an exact package version. Also tagged
-  with the commit.
-- **`apartment-finder-postgis`**: the database, tagged with a hash of its Dockerfile
-  rather than the commit. An unchanged database image keeps its tag, so an app deploy
-  never restarts Postgres; the image is rebuilt only when its Dockerfile changes.
+**Map data**
 
-The region config is built into the app and importer images, so the code and the
-config it was tested with always ship together.
+- [The region lives in config, not code](#the-region-lives-in-config-not-code)
+- [The region is its exact outline, not a rectangle](#the-region-is-its-exact-outline-not-a-rectangle)
+- [Every upstream response is cached, misses included](#every-upstream-response-is-cached-misses-included)
+- [Geocoding: streets first without a house number, and the match is shown](#geocoding-streets-first-without-a-house-number-and-the-match-is-shown)
+- [Amenities come from our own import, not the Overpass API](#amenities-come-from-our-own-import-not-the-overpass-api)
+- [Routing: our own OSRM, built from the same extract](#routing-our-own-osrm-built-from-the-same-extract)
 
-Go cross-compiles without help, but the importer and PostGIS images run `apt-get`
-inside arm64 images, so CI emulates arm64 with QEMU for those steps. Docker's
-`setup-qemu-action` and its emulator image are both pinned.
+**Images**
 
-### Cross-compiling for arm64
+- [Three images, built for arm64](#three-images-built-for-arm64)
+- [Cross-compiling for arm64](#cross-compiling-for-arm64)
+- [distroless/static, running as non-root](#distrolessstatic-running-as-non-root)
+- [Everything pinned by digest](#everything-pinned-by-digest)
+- [Our own PostGIS image](#our-own-postgis-image)
 
-The production VM is arm64 and GitHub's standard runners are amd64. The options:
-emulate arm64 with QEMU (much slower, since every build step runs under emulation),
-build on an arm64 runner, or cross-compile. Go cross-compiles natively, so the
-Dockerfile's build stage runs on the build machine's own CPU and only the final stage,
-which just copies files, targets arm64. Any runner or laptop builds the arm64 image at
-native speed.
+**The server**
 
-### distroless/static, running as non-root
+- [Oracle Cloud's free tier, and treating it as revocable](#oracle-clouds-free-tier-and-treating-it-as-revocable)
+- [Terraform runs from a laptop, with state kept there](#terraform-runs-from-a-laptop-with-state-kept-there)
+- [One server running k3s](#one-server-running-k3s)
+- [Pinned, and checked before it runs](#pinned-and-checked-before-it-runs)
+- [Oracle's Ubuntu firewall breaks Kubernetes, quietly](#oracles-ubuntu-firewall-breaks-kubernetes-quietly)
+- [Locked down by default](#locked-down-by-default)
+- [Staying clear of Oracle's idle rule](#staying-clear-of-oracles-idle-rule)
 
-A static Go binary needs only CA certificates and timezone data. `distroless/static`
-has those and nothing else: no shell, no package manager. That means fewer CVEs to
-patch, and nothing for an attacker to work with if the process were compromised. It
-runs as a non-root user. The cost is that you can't `kubectl exec` into a shell to
-debug; ephemeral debug containers cover that.
+**Deploying**
 
-### Everything pinned by digest
-
-Base images are pinned by `@sha256` digest, and GitHub Actions by commit SHA, with the
-readable version in a comment. Tags can be moved to point at different content; a
-digest can't. So a build today and a build next month use the same inputs, and a
-compromised upstream tag can't slip into CI.
+- [The cluster pulls its deploys](#the-cluster-pulls-its-deploys)
+- [Releases are chart versions, not commits that bump a tag](#releases-are-chart-versions-not-commits-that-bump-a-tag)
+- [CI waits for the site, not the cluster](#ci-waits-for-the-site-not-the-cluster)
+- [HTTPS from Let's Encrypt, on an sslip.io name](#https-from-lets-encrypt-on-an-sslipio-name)
+- [One secret, made by hand](#one-secret-made-by-hand)
+- [Deploys and lost pods don't drop requests](#deploys-and-lost-pods-dont-drop-requests)
+- [A broken release keeps the old one serving](#a-broken-release-keeps-the-old-one-serving)
+- [The first install builds its own data](#the-first-install-builds-its-own-data)
+- [Rendered in CI the way Flux renders it](#rendered-in-ci-the-way-flux-renders-it)
+- [Metrics stay inside the cluster](#metrics-stay-inside-the-cluster)
 
 ### A job queue in Postgres, not Kafka or Redis
 
@@ -335,17 +334,6 @@ is lost, so polling would still be needed as a fallback. One cheap indexed query
 second costs nothing, and a second of latency is invisible next to geocoding and
 routing.
 
-### Our own PostGIS image
-
-The official `postgis/postgis` image is published for amd64 only, and the VM is arm64. A
-third-party multi-arch build exists, but its Debian variants stopped being updated in
-early 2026, so they were missing months of Postgres security releases.
-`deploy/postgis/Dockerfile` uses the same recipe as the official image instead: the
-official `postgres:18` image, which is multi-arch and promptly patched, plus PostGIS
-from the PostgreSQL project's own apt repository. Both are pinned, so builds are
-repeatable, and security updates are an explicit version bump. The integration tests
-build and run this same image, so tests and production can't drift apart.
-
 ### Migrations: a small runner instead of a library
 
 Migrations are numbered SQL files embedded in the binary. On startup, the api and worker
@@ -365,6 +353,25 @@ Tests start a single PostGIS container per test binary and migrate a template da
 once. Each test gets its own database copied from the template, which takes
 milliseconds. Tests run in parallel without seeing each other's rows, and no test has to
 clean up after itself.
+
+### Probes and metrics on a separate admin port
+
+The api serves public traffic on `:8080` and `/healthz`, `/readyz` and `/metrics` on
+`:9090`. Only `:8080` is routed through the ingress, so metrics can't leak to the
+internet, even if an ingress rule is too broad. The alternative, one port with an
+ingress rule that blocks `/metrics`, fails open: one mistake in the rule exposes it.
+
+The trade-off: a probe on the admin port doesn't go through the public server. Both
+servers run in one process, and if either fails, the process exits and Kubernetes
+restarts it, so a dead public server can't go unnoticed. Admin requests aren't logged,
+because probes and scrapes every few seconds would bury real traffic.
+
+### Metric labels use route patterns, not raw paths
+
+`http_requests_total` is labelled with the matched route (`/api/listings/{id}`), not the
+URL (`/api/listings/42`). Every distinct label value is a new time series in
+Prometheus, so labelling by raw path would let anyone scanning random URLs grow memory
+without limit. Unknown HTTP methods collapse to `other` for the same reason.
 
 ### Scores use fixed thresholds, not a ranking
 
@@ -399,57 +406,6 @@ query string.
   the next read.
 
 It costs a little CPU per request: ranking 50 listings on 10 criteria takes about 0.1 ms.
-
-### Visitors are a cookie, not accounts
-
-There are no sign-ups. A visitor is a random id in a cookie, and whoever holds the cookie
-sees and edits that visitor's listings. Accounts would mean passwords or email
-addresses: personal data, and a lot to secure, for a site where people try out a few
-listings.
-
-- **The server picks the ids.** A cookie with an id the server never handed out is
-  replaced with a fresh one. Ids are version 4 UUIDs: 122 random bits, too many to guess
-  someone else's.
-- **Reading creates nothing.** A visitor is created by their first listing, so crawlers
-  and people just looking leave no rows behind.
-- **Kept for 30 days after the last visit.** Then the worker's hourly clean-up deletes the
-  visitor with their listings and places. People may type in their own address, so
-  little is kept, and not for long.
-- **The cookie can't be read by scripts** (`HttpOnly`), and is only sent over HTTPS in
-  production (`Secure`, set whenever the request came through the TLS ingress).
-
-### Cross-site request forgery
-
-Because the cookie is the credential, another site could try to make a visitor's browser
-add or delete listings with it. Three things stop that:
-- **Go's `http.CrossOriginProtection`** rejects `POST` and `DELETE` requests that browsers
-  mark as coming from another site (the `Sec-Fetch-Site` and `Origin` headers).
-- **`SameSite=Lax` on the cookie**: browsers don't send it with requests from other
-  sites, except for plain link clicks.
-- **JSON-only bodies**: an HTML form on another site can't send `application/json`.
-
-### Limits count additions, under one lock
-
-Each listing or place costs a request to Photon, a free public geocoder, plus routing
-work on our small server. So additions are capped:
-- **Per visitor:** 10 an hour and 30 a day.
-- **Site-wide:** 300 a day. Clearing cookies gets around the per-visitor limits, but not
-  this one, so Photon never sees more than 300 new addresses a day from us.
-
-How the limits are counted:
-- **In Postgres, not in memory.** Counts stay right with any number of API replicas and
-  across restarts.
-- **Additions, not listings.** Each one is logged in a `submissions` table, so deleting a
-  listing doesn't give its slot back.
-- **Rolling windows.** "A day" is the last 24 hours, which needs no time zone and has no
-  rush at midnight.
-- **One lock.** Counting and recording happen under a transaction-scoped advisory lock.
-  Without it, two simultaneous requests could both see 9 of 10 used and both go through.
-  One lock for everyone is fine at a few hundred additions a day. A test fires 10
-  simultaneous additions at a limit of 3 and expects exactly 3 to succeed.
-
-A refused addition gets `429 Too Many Requests` with a `Retry-After` header saying when
-the oldest counted addition leaves its window.
 
 ### Personal places score the trip from each listing
 
@@ -519,6 +475,57 @@ would be a new `Source`, with nothing downstream changing.
 
 The optional link to the original advert is stored and shown, never fetched. Only
 `http` and `https` links are accepted, so a link can't run script when clicked.
+
+### Visitors are a cookie, not accounts
+
+There are no sign-ups. A visitor is a random id in a cookie, and whoever holds the cookie
+sees and edits that visitor's listings. Accounts would mean passwords or email
+addresses: personal data, and a lot to secure, for a site where people try out a few
+listings.
+
+- **The server picks the ids.** A cookie with an id the server never handed out is
+  replaced with a fresh one. Ids are version 4 UUIDs: 122 random bits, too many to guess
+  someone else's.
+- **Reading creates nothing.** A visitor is created by their first listing, so crawlers
+  and people just looking leave no rows behind.
+- **Kept for 30 days after the last visit.** Then the worker's hourly clean-up deletes the
+  visitor with their listings and places. People may type in their own address, so
+  little is kept, and not for long.
+- **The cookie can't be read by scripts** (`HttpOnly`), and is only sent over HTTPS in
+  production (`Secure`, set whenever the request came through the TLS ingress).
+
+### Cross-site request forgery
+
+Because the cookie is the credential, another site could try to make a visitor's browser
+add or delete listings with it. Three things stop that:
+- **Go's `http.CrossOriginProtection`** rejects `POST` and `DELETE` requests that browsers
+  mark as coming from another site (the `Sec-Fetch-Site` and `Origin` headers).
+- **`SameSite=Lax` on the cookie**: browsers don't send it with requests from other
+  sites, except for plain link clicks.
+- **JSON-only bodies**: an HTML form on another site can't send `application/json`.
+
+### Limits count additions, under one lock
+
+Each listing or place costs a request to Photon, a free public geocoder, plus routing
+work on our small server. So additions are capped:
+- **Per visitor:** 10 an hour and 30 a day.
+- **Site-wide:** 300 a day. Clearing cookies gets around the per-visitor limits, but not
+  this one, so Photon never sees more than 300 new addresses a day from us.
+
+How the limits are counted:
+- **In Postgres, not in memory.** Counts stay right with any number of API replicas and
+  across restarts.
+- **Additions, not listings.** Each one is logged in a `submissions` table, so deleting a
+  listing doesn't give its slot back.
+- **Rolling windows.** "A day" is the last 24 hours, which needs no time zone and has no
+  rush at midnight.
+- **One lock.** Counting and recording happen under a transaction-scoped advisory lock.
+  Without it, two simultaneous requests could both see 9 of 10 used and both go through.
+  One lock for everyone is fine at a few hundred additions a day. A test fires 10
+  simultaneous additions at a limit of 3 and expects exactly 3 to succeed.
+
+A refused addition gets `429 Too Many Requests` with a `Retry-After` header saying when
+the oldest counted addition leaves its window.
 
 ### The region lives in config, not code
 
@@ -683,6 +690,63 @@ directions with OSRM, came out within 20% of ours:
 Ours run a little shorter. The public servers use their own walking and cycling
 profiles, which differ from OSRM's defaults.
 
+### Three images, built for arm64
+
+CI publishes three images to GHCR:
+- **`apartment-finder`**: the api and the worker. The worker's Kubernetes Deployment
+  overrides the entrypoint, so both always deploy from the same commit; the cost is a
+  few MB of unused binary in each container. It's distroless and tagged with the commit.
+- **`apartment-finder-importer`**: the amenity import, run weekly and as the worker's
+  first step on a new server, and the routers' download of the map extract. It needs
+  osmium, which can't live in a distroless image, so it gets its own Debian-based target
+  in the same Dockerfile, with osmium pinned to an exact package version. Also tagged
+  with the commit.
+- **`apartment-finder-postgis`**: the database, tagged with a hash of its Dockerfile
+  rather than the commit. An unchanged database image keeps its tag, so an app deploy
+  never restarts Postgres; the image is rebuilt only when its Dockerfile changes.
+
+The region config is built into the app and importer images, so the code and the
+config it was tested with always ship together.
+
+Go cross-compiles without help, but the importer and PostGIS images run `apt-get`
+inside arm64 images, so CI emulates arm64 with QEMU for those steps. Docker's
+`setup-qemu-action` and its emulator image are both pinned.
+
+### Cross-compiling for arm64
+
+The production VM is arm64 and GitHub's standard runners are amd64. The options:
+emulate arm64 with QEMU (much slower, since every build step runs under emulation),
+build on an arm64 runner, or cross-compile. Go cross-compiles natively, so the
+Dockerfile's build stage runs on the build machine's own CPU and only the final stage,
+which just copies files, targets arm64. Any runner or laptop builds the arm64 image at
+native speed.
+
+### distroless/static, running as non-root
+
+A static Go binary needs only CA certificates and timezone data. `distroless/static`
+has those and nothing else: no shell, no package manager. That means fewer CVEs to
+patch, and nothing for an attacker to work with if the process were compromised. It
+runs as a non-root user. The cost is that you can't `kubectl exec` into a shell to
+debug; ephemeral debug containers cover that.
+
+### Everything pinned by digest
+
+Base images are pinned by `@sha256` digest, and GitHub Actions by commit SHA, with the
+readable version in a comment. Tags can be moved to point at different content; a
+digest can't. So a build today and a build next month use the same inputs, and a
+compromised upstream tag can't slip into CI.
+
+### Our own PostGIS image
+
+The official `postgis/postgis` image is published for amd64 only, and the VM is arm64. A
+third-party multi-arch build exists, but its Debian variants stopped being updated in
+early 2026, so they were missing months of Postgres security releases.
+`deploy/postgis/Dockerfile` uses the same recipe as the official image instead: the
+official `postgres:18` image, which is multi-arch and promptly patched, plus PostGIS
+from the PostgreSQL project's own apt repository. Both are pinned, so builds are
+repeatable, and security updates are an explicit version bump. The integration tests
+build and run this same image, so tests and production can't drift apart.
+
 ### Oracle Cloud's free tier, and treating it as revocable
 
 The whole stack needs about 4 GB of memory: two routers at 0.4 GB each, Postgres, k3s,
@@ -769,6 +833,21 @@ follows the IP instead.
 
 One more free-tier rule: Oracle may reclaim a server whose CPU, network and memory all
 stay under 20% for a week. See "Staying clear of Oracle's idle rule" below.
+
+### Staying clear of Oracle's idle rule
+
+Oracle may reclaim an Arm server whose CPU, network and memory all stay under 20% for a
+week. CPU and network will, for a site this quiet, so memory decides.
+
+The plan was a 1 GB Postgres cache, but Linux only counts shared memory once it's used,
+and this little data never fills it. With the app deployed, the server measured 22%,
+too close to the line. Prometheus and Grafana from synthetic-monitor, running on the
+same server, should add enough; the server will be measured again once they're running.
+The other options considered:
+- **A Pay As You Go account**, which Always Free resources stay free on. A 2023 notice
+  from Oracle said this prevents reclaiming, but its current docs don't say so.
+- **A pod that just holds memory.** Predictable, but it exists only to get past the
+  check.
 
 ### The cluster pulls its deploys
 
@@ -901,18 +980,3 @@ points at. Checked from outside: `/metrics` on the site answers 404 and port 909
 answer at all. From a pod inside the cluster, both the API and the worker answer.
 Prometheus and Grafana run on the same server but live in a separate repo,
 [synthetic-monitor](https://github.com/MSJawad/synthetic-monitor).
-
-### Staying clear of Oracle's idle rule
-
-Oracle may reclaim an Arm server whose CPU, network and memory all stay under 20% for a
-week. CPU and network will, for a site this quiet, so memory decides.
-
-The plan was a 1 GB Postgres cache, but Linux only counts shared memory once it's used,
-and this little data never fills it. With the app deployed, the server measured 22%,
-too close to the line. Prometheus and Grafana from synthetic-monitor, running on the
-same server, should add enough; the server will be measured again once they're running.
-The other options considered:
-- **A Pay As You Go account**, which Always Free resources stay free on. A 2023 notice
-  from Oracle said this prevents reclaiming, but its current docs don't say so.
-- **A pod that just holds memory.** Predictable, but it exists only to get past the
-  check.
