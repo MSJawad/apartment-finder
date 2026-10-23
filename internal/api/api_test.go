@@ -352,6 +352,48 @@ func TestGetAndDelete(t *testing.T) {
 	}
 }
 
+func TestDeletingTheExample(t *testing.T) {
+	t.Parallel()
+	pool, server := setup(t, visitor.Limits{PerHour: 10, PerDay: 10, SiteWidePerDay: 10})
+	var example int64
+	if err := pool.QueryRow(t.Context(), `
+		INSERT INTO listings (visitor_id, source, address, warm_rent_cents, size_m2, rooms)
+		VALUES (NULL, 'example', 'Johannesstraße, Erfurt', 78000, 58, 2) RETURNING id`).Scan(&example); err != nil {
+		t.Fatal(err)
+	}
+	path := "/api/listings/" + strconv.FormatInt(example, 10)
+	alice, bob := newBrowser(t, server), newBrowser(t, server)
+	visitors := func() int {
+		var n int
+		if err := pool.QueryRow(t.Context(), "SELECT count(*) FROM visitors").Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	// Deleting anything else as a new visitor creates no one.
+	other := "/api/listings/" + strconv.FormatInt(example+1, 10)
+	if resp := alice.do(http.MethodDelete, other, "", ""); resp.status != http.StatusNotFound || visitors() != 0 {
+		t.Errorf("new visitor deleting a missing listing: %d, %d visitors; want 404 and none", resp.status, visitors())
+	}
+
+	// Deleting the example does, to remember it for them.
+	resp := alice.do(http.MethodDelete, path, "", "")
+	if resp.status != http.StatusNoContent || resp.header.Get("Set-Cookie") == "" || visitors() != 1 {
+		t.Fatalf("new visitor deleting the example: %d %s, cookie %q, %d visitors",
+			resp.status, resp.body, resp.header.Get("Set-Cookie"), visitors())
+	}
+	if got := alice.listings(""); len(got.Listings) != 0 {
+		t.Errorf("alice still sees %+v after deleting the example", got.Listings)
+	}
+	if resp := alice.do(http.MethodDelete, path, "", ""); resp.status != http.StatusNotFound {
+		t.Errorf("deleting it again: %d, want 404", resp.status)
+	}
+	if got := bob.listings(""); len(got.Listings) != 1 || !got.Listings[0].Example {
+		t.Errorf("bob sees %+v, want the example", got.Listings)
+	}
+}
+
 func TestRegion(t *testing.T) {
 	t.Parallel()
 	_, server := setup(t, visitor.Limits{PerHour: 10, PerDay: 10, SiteWidePerDay: 10})

@@ -86,8 +86,9 @@ func (s *Store) Add(ctx context.Context, owner uuid.UUID, source string, d Draft
 	return id, err
 }
 
-// Visible returns the example listings and viewer's own, newest first.
-// uuid.Nil() as viewer means a visitor without listings of their own.
+// Visible returns viewer's own listings and the examples they haven't
+// deleted, newest first. uuid.Nil() as viewer means a visitor without
+// listings of their own.
 func (s *Store) Visible(ctx context.Context, viewer uuid.UUID) ([]Listing, error) {
 	return s.query(ctx, viewer, "")
 }
@@ -106,17 +107,41 @@ func (s *Store) Get(ctx context.Context, viewer uuid.UUID, id int64) (Listing, e
 	return listings[0], nil
 }
 
-// Delete deletes one of owner's listings with its measurements. Example
-// listings belong to no one, so they can't be deleted.
+// Delete deletes one of owner's listings with its measurements. An example
+// belongs to no one, so deleting it hides it from owner instead, and other
+// visitors still see it.
 func (s *Store) Delete(ctx context.Context, owner uuid.UUID, id int64) error {
 	tag, err := s.Pool.Exec(ctx, "DELETE FROM listings WHERE id = $1 AND visitor_id = $2", id, owner)
 	if err != nil {
 		return fmt.Errorf("delete listing %d: %w", id, err)
 	}
+	if tag.RowsAffected() == 1 {
+		return nil
+	}
+	tag, err = s.Pool.Exec(ctx, `
+		INSERT INTO hidden_examples (visitor_id, listing_id)
+		SELECT $2, id FROM listings WHERE id = $1 AND visitor_id IS NULL
+		ON CONFLICT DO NOTHING`, id, owner)
+	if err != nil {
+		return fmt.Errorf("hide example %d: %w", id, err)
+	}
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// IsExample reports whether id is an example listing.
+func (s *Store) IsExample(ctx context.Context, id int64) (bool, error) {
+	var example bool
+	err := s.Pool.QueryRow(ctx, "SELECT visitor_id IS NULL FROM listings WHERE id = $1", id).Scan(&example)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("load listing %d: %w", id, err)
+	}
+	return example, nil
 }
 
 // query loads the listings viewer may see that match filter, then their
@@ -129,7 +154,8 @@ func (s *Store) query(ctx context.Context, viewer uuid.UUID, filter string, args
 		       coalesce(geocoded_label, ''), coalesce(geocode_precision, ''),
 		       ST_Y(location::geometry), ST_X(location::geometry), created_at
 		FROM listings
-		WHERE (visitor_id IS NULL OR visitor_id = $1) `+filter+`
+		WHERE (visitor_id = $1 OR visitor_id IS NULL AND NOT EXISTS (
+		           SELECT 1 FROM hidden_examples h WHERE h.listing_id = listings.id AND h.visitor_id = $1)) `+filter+`
 		ORDER BY created_at DESC, id DESC`, append([]any{viewer}, args...)...)
 	if err != nil {
 		return nil, fmt.Errorf("load listings: %w", err)

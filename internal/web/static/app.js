@@ -299,8 +299,8 @@ function listingSummary(l) {
   if (l.source_url) {
     actions.append(el("a", { href: l.source_url, target: "_blank", rel: "noopener noreferrer nofollow", onclick: (e) => e.stopPropagation(), text: "Advert" }));
   }
-  if (!l.example) actions.append(deleteButton(() => remove(`/api/listings/${l.id}`), `Delete ${l.address}`));
-  if (actions.childElementCount > 0) fragment.append(actions);
+  actions.append(deleteButton(() => remove(`/api/listings/${l.id}`), `Delete ${l.address}`));
+  fragment.append(actions);
   return fragment;
 }
 
