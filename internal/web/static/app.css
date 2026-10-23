@@ -212,8 +212,11 @@ details { display: grid; gap: 10px; }
   color: var(--muted); font-weight: 600; padding: 8px 10px; background: var(--surface-2);
 }
 .ranking td { padding: 10px; border-top: 1px solid var(--border); vertical-align: top; }
-.ranking .rank { width: 2.2em; color: var(--muted); font-variant-numeric: tabular-nums; }
-.ranking .score-cell { width: 4.2em; }
+/* On the columns rather than the cells, so the headers keep their places
+   when the table is empty. */
+.ranking .rank-col { width: 2.2em; }
+.ranking .score-col { width: 4.2em; }
+.ranking .rank { color: var(--muted); font-variant-numeric: tabular-nums; }
 .ranking tr.listing { cursor: pointer; }
 .ranking tr.listing:hover td, .ranking tr.listing.selected td { background: var(--accent-soft); }
 .ranking tr.details td { border-top: 0; padding-top: 0; }

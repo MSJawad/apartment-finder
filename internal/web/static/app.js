@@ -254,7 +254,7 @@ function renderTable() {
     const selected = l.id === state.selected;
     const row = el("tr", { class: `listing${selected ? " selected" : ""}`, "data-id": String(l.id), onclick: () => select(l.id, true) },
       el("td", { class: "rank", text: scored ? String(rank) : "" }),
-      el("td", { class: "score-cell" }, scoreBadge(l)),
+      el("td", {}, scoreBadge(l)),
       el("td", {}, listingSummary(l)),
     );
     body.append(row);
