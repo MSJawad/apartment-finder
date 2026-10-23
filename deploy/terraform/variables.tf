@@ -10,14 +10,14 @@ variable "compartment_ocid" {
 }
 
 variable "region" {
-  description = "Must be the tenancy's home region: Always Free compute exists only there."
+  description = "Must be the tenancy's home region."
   type        = string
   default     = "eu-frankfurt-1"
 }
 
 variable "availability_domain" {
   description = <<-EOT
-    Which availability domain (1-3) to put the server in. Free Arm capacity is
+    Which availability domain (1-3) to put the server in. Arm capacity is
     tracked per domain: on an "Out of host capacity" error, try another one.
   EOT
   type        = number

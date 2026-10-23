@@ -15,8 +15,8 @@ import (
 const submissionLockKey = 7_270_002
 
 // Limits caps how many listings and places can be added. Each addition costs
-// a geocoding request to a free public service plus routing work, so the
-// caps protect that service's goodwill and our small server.
+// a geocoding request to a public service plus routing work, so the caps
+// protect that service's goodwill and our small server.
 //
 // Windows are rolling: "per day" means the last 24 hours, which needs no
 // time zone and has no midnight rush.

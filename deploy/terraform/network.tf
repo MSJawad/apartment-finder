@@ -1,5 +1,5 @@
-# A virtual network with one public subnet. All of it is free; the security
-# list is the server's outer firewall.
+# A virtual network with one public subnet. The security list is the
+# server's outer firewall.
 
 locals {
   compartment_id = coalesce(var.compartment_ocid, var.tenancy_ocid)
