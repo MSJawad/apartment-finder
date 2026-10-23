@@ -12,7 +12,6 @@ import (
 	"github.com/MSJawad/apartment-finder/internal/listing"
 	"github.com/MSJawad/apartment-finder/internal/place"
 	"github.com/MSJawad/apartment-finder/internal/scoring"
-	"github.com/MSJawad/apartment-finder/internal/visitor"
 )
 
 // weightPrefix marks a weight in the query string:
@@ -191,11 +190,28 @@ func (a *API) deleteListing(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, r, listing.ErrNotFound)
 		return
 	}
-	// Deleting never creates a visitor: a new one has nothing to delete.
-	owner, ok := visitor.FromRequest(r)
-	if !ok {
-		a.fail(w, r, listing.ErrNotFound)
+	owner, err := a.viewer(w, r)
+	if err != nil {
+		a.fail(w, r, err)
 		return
+	}
+	// A new visitor has nothing of their own to delete, only the example.
+	// Hiding that needs a visitor to remember it for, so it creates one;
+	// anything else answers 404 without leaving a row behind.
+	if owner == uuid.Nil() {
+		example, err := a.Listings.IsExample(r.Context(), id)
+		if err != nil {
+			a.fail(w, r, err)
+			return
+		}
+		if !example {
+			a.fail(w, r, listing.ErrNotFound)
+			return
+		}
+		if owner, err = a.owner(w, r); err != nil {
+			a.fail(w, r, err)
+			return
+		}
 	}
 	if err := a.Listings.Delete(r.Context(), owner, id); err != nil {
 		a.fail(w, r, err)

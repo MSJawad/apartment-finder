@@ -75,11 +75,6 @@
     }
   ],
   "examples": [
-    { "address": "Johannesstraße, Erfurt", "warm_rent_eur": 780, "size_m2": 58, "rooms": 2 },
-    { "address": "Krämpferstraße, Erfurt", "warm_rent_eur": 960, "size_m2": 74, "rooms": 3 },
-    { "address": "Magdeburger Allee, Erfurt", "warm_rent_eur": 590, "size_m2": 52, "rooms": 2 },
-    { "address": "Löberstraße, Erfurt", "warm_rent_eur": 450, "size_m2": 34, "rooms": 1 },
-    { "address": "Hochheimer Straße, Erfurt", "warm_rent_eur": 720, "size_m2": 68, "rooms": 3 },
-    { "address": "Blumenstraße, Erfurt", "warm_rent_eur": 690, "size_m2": 63, "rooms": 2.5 }
+    { "address": "Johannesstraße, Erfurt", "warm_rent_eur": 780, "size_m2": 58, "rooms": 2 }
   ]
 }

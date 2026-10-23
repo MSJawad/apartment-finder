@@ -70,8 +70,8 @@ type Region struct {
 		Rooms     Threshold `json:"rooms"`
 	} `json:"listing"`
 	Categories []Category `json:"categories"`
-	// Examples are listings every visitor sees, so a first visit doesn't
-	// open on an empty page.
+	// Examples are listings every visitor sees until they delete them, so a
+	// first visit doesn't open on an empty page.
 	Examples []Example `json:"examples"`
 }
 

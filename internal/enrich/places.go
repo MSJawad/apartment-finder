@@ -77,7 +77,7 @@ func (e *Enricher) locatePlace(ctx context.Context, placeID int64) error {
 }
 
 // measureToPlace measures the trip to a place from every located listing its
-// visitor sees: their own and the examples.
+// visitor sees: their own and the examples they haven't deleted.
 func (e *Enricher) measureToPlace(ctx context.Context, placeID int64) error {
 	var mode region.Mode
 	var dest routing.Point
@@ -96,7 +96,8 @@ func (e *Enricher) measureToPlace(ctx context.Context, placeID int64) error {
 	rows, err := e.Pool.Query(ctx, `
 		SELECT id, ST_Y(location::geometry), ST_X(location::geometry)
 		FROM listings
-		WHERE location IS NOT NULL AND (visitor_id IS NULL OR visitor_id = $1)`, owner)
+		WHERE location IS NOT NULL AND (visitor_id = $1 OR visitor_id IS NULL AND NOT EXISTS (
+		      SELECT 1 FROM hidden_examples h WHERE h.listing_id = listings.id AND h.visitor_id = $1))`, owner)
 	if err != nil {
 		return fmt.Errorf("load listings for place %d: %w", placeID, err)
 	}
@@ -126,7 +127,8 @@ func (e *Enricher) measureToPlace(ctx context.Context, placeID int64) error {
 }
 
 // measurePlacesFrom measures the trip from a listing to every located place
-// that sees it: its visitor's places, or for an example listing, everyone's.
+// that sees it: its visitor's places, or for an example listing, the places
+// of everyone who hasn't deleted it.
 func (e *Enricher) measurePlacesFrom(ctx context.Context, listingID int64) error {
 	var origin routing.Point
 	var owner *uuid.UUID
@@ -144,7 +146,9 @@ func (e *Enricher) measurePlacesFrom(ctx context.Context, listingID int64) error
 	rows, err := e.Pool.Query(ctx, `
 		SELECT id, mode, ST_Y(location::geometry), ST_X(location::geometry)
 		FROM places
-		WHERE location IS NOT NULL AND ($1::uuid IS NULL OR visitor_id = $1)`, owner)
+		WHERE location IS NOT NULL AND (visitor_id = $1 OR $1::uuid IS NULL AND NOT EXISTS (
+		      SELECT 1 FROM hidden_examples h WHERE h.listing_id = $2 AND h.visitor_id = places.visitor_id))`,
+		owner, listingID)
 	if err != nil {
 		return fmt.Errorf("load places for listing %d: %w", listingID, err)
 	}

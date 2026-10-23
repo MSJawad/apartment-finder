@@ -77,17 +77,24 @@ func TestAddQueuesTheMeasurement(t *testing.T) {
 	}
 }
 
+// addExample adds an example listing, as SyncExamples would.
+func addExample(t *testing.T, pool *pgxpool.Pool) int64 {
+	t.Helper()
+	var id int64
+	if err := pool.QueryRow(t.Context(), `
+		INSERT INTO listings (visitor_id, source, address, warm_rent_cents, size_m2, rooms)
+		VALUES (NULL, 'example', 'Johannesstraße, Erfurt', 70000, 55, 2) RETURNING id`).Scan(&id); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
 func TestVisitorsSeeExamplesAndTheirOwn(t *testing.T) {
 	t.Parallel()
 	pool, store := setup(t, visitor.Limits{PerHour: 10, PerDay: 10, SiteWidePerDay: 10})
 	alice, bob := newVisitor(t, pool), newVisitor(t, pool)
 
-	var example int64
-	if err := pool.QueryRow(t.Context(), `
-		INSERT INTO listings (visitor_id, source, address, warm_rent_cents, size_m2, rooms)
-		VALUES (NULL, 'example', 'Johannesstraße, Erfurt', 70000, 55, 2) RETURNING id`).Scan(&example); err != nil {
-		t.Fatal(err)
-	}
+	example := addExample(t, pool)
 	alicesListing, err := store.Add(t.Context(), alice, "manual", draft)
 	if err != nil {
 		t.Fatal(err)
@@ -153,6 +160,47 @@ func TestDelete(t *testing.T) {
 	// The slot it used still counts towards her limits.
 	if n := count(t, pool, "SELECT count(*) FROM submissions"); n != 1 {
 		t.Errorf("%d submissions after deleting, want 1", n)
+	}
+}
+
+func TestDeletingAnExampleHidesIt(t *testing.T) {
+	t.Parallel()
+	pool, store := setup(t, visitor.Limits{PerHour: 10, PerDay: 10, SiteWidePerDay: 10})
+	alice, bob := newVisitor(t, pool), newVisitor(t, pool)
+	example := addExample(t, pool)
+	alicesListing, err := store.Add(t.Context(), alice, "manual", draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := store.Delete(t.Context(), alice, example); err != nil {
+		t.Fatalf("alice deleting the example: %v", err)
+	}
+	listings, err := store.Visible(t.Context(), alice)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(listings) != 1 || listings[0].ID != alicesListing {
+		t.Errorf("alice sees %+v after deleting the example, want only their own listing", listings)
+	}
+	if _, err := store.Get(t.Context(), alice, example); !errors.Is(err, listing.ErrNotFound) {
+		t.Errorf("alice getting the deleted example: %v, want ErrNotFound", err)
+	}
+	if err := store.Delete(t.Context(), alice, example); !errors.Is(err, listing.ErrNotFound) {
+		t.Errorf("alice deleting it again: %v, want ErrNotFound", err)
+	}
+	// Only for alice: the example itself stays.
+	if l, err := store.Get(t.Context(), bob, example); err != nil || !l.Example {
+		t.Errorf("bob getting the example: %+v, %v", l, err)
+	}
+
+	for _, tt := range []struct {
+		id   int64
+		want bool
+	}{{example, true}, {alicesListing, false}, {example + alicesListing + 1, false}} {
+		if got, err := store.IsExample(t.Context(), tt.id); err != nil || got != tt.want {
+			t.Errorf("IsExample(%d) = %v, %v; want %v", tt.id, got, err, tt.want)
+		}
 	}
 }
 

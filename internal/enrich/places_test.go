@@ -140,6 +140,40 @@ func TestNewListingsMeasureTripsToPlaces(t *testing.T) {
 	}
 }
 
+func TestDeletedExamplesAreNotMeasured(t *testing.T) {
+	t.Parallel()
+	pool, enricher, _ := setup(t)
+	alice, bob := addVisitor(t, pool), addVisitor(t, pool)
+	example := addOwnListing(t, pool, enricher, nil)
+	if _, err := pool.Exec(t.Context(), "INSERT INTO hidden_examples (visitor_id, listing_id) VALUES ($1, $2)", alice, example); err != nil {
+		t.Fatal(err)
+	}
+
+	// A place of alice's isn't measured from the example alice deleted.
+	alicesStation := addPlace(t, pool, alice, "Willy-Brandt-Platz 12, Erfurt", region.Walk)
+	bobsUni := addPlace(t, pool, bob, "Nordhäuser Straße 63, Erfurt", region.Bike)
+	for _, id := range []int64{alicesStation, bobsUni} {
+		if err := enricher.HandlePlace(t.Context(), placeJob(id, 1)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := trips(t, pool, "place_id = $1", alicesStation); len(got) != 0 {
+		t.Errorf("trips to alice's place = %v, want none from the deleted example", got)
+	}
+
+	// Nor when the example is measured again, say after its rent changed,
+	// while bob's place still is.
+	if _, err := pool.Exec(t.Context(), "DELETE FROM place_measurements"); err != nil {
+		t.Fatal(err)
+	}
+	if err := enricher.Handle(t.Context(), job(example, 1)); err != nil {
+		t.Fatal(err)
+	}
+	if got := trips(t, pool, "listing_id = $1", example); len(got) != 1 || !near(got[[2]int64{example, bobsUni}], 0.012*111_200/250) {
+		t.Errorf("trips from the example = %v, want only bob's ride", got)
+	}
+}
+
 func TestPlaceWithoutRoute(t *testing.T) {
 	t.Parallel()
 	pool, enricher, router := setup(t)
