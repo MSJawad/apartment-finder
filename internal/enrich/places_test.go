@@ -124,11 +124,11 @@ func TestNewListingsMeasureTripsToPlaces(t *testing.T) {
 		}
 	}
 
-	// Alice's listing measures the trip to her place only.
+	// Alice's listing measures the trip to alice's own place only.
 	alicesListing := addOwnListing(t, pool, enricher, &alice)
 	got := trips(t, pool, "listing_id = $1", alicesListing)
 	if len(got) != 1 || !near(got[[2]int64{alicesListing, alicesStation}], 0.005*111_200/80) {
-		t.Errorf("trips from alice's listing = %v, want only the walk to her station", got)
+		t.Errorf("trips from alice's listing = %v, want only the walk to their station", got)
 	}
 
 	// An example listing measures the trip to everyone's places.
