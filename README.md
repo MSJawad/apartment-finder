@@ -76,7 +76,7 @@ You need Go 1.27, Docker and [osmium](https://osmcode.org/osmium-tool/).
 ```sh
 go test -race ./...            # the integration tests start their own PostGIS container
 
-scripts/prepare-routing.sh     # downloads the map and builds the routing data, ~2 min
+scripts/prepare-routing.sh     # downloads the map and builds the routing data, ~4 min
 docker compose up -d --wait    # Postgres and the two routers
 export DATABASE_URL='postgres://postgres:dev@localhost:5432/postgres?sslmode=disable'
 export REGION_CONFIG=config/thuringia.json
