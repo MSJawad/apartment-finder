@@ -26,8 +26,8 @@ import (
 var version = "dev"
 
 // limits cap how many listings and places visitors can add. Each one costs a
-// request to Photon, a free public geocoder, so the site-wide cap keeps us a
-// polite user of it.
+// request to Photon, a public geocoder, so the site-wide cap keeps us a polite
+// user of it.
 var limits = visitor.Limits{PerHour: 10, PerDay: 30, SiteWidePerDay: 300}
 
 func main() {

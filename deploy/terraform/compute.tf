@@ -1,5 +1,5 @@
-# One Arm server, the whole Always Free allowance: 2 OCPUs and 12 GB. k3s
-# runs on it as a single-node Kubernetes cluster.
+# One Arm server with 2 OCPUs and 12 GB. k3s runs on it as a single-node
+# Kubernetes cluster.
 
 data "oci_identity_availability_domains" "all" {
   compartment_id = var.tenancy_ocid
@@ -25,17 +25,16 @@ resource "oci_core_instance" "server" {
   source_details {
     source_type = "image"
     source_id   = one(data.oci_core_images.ubuntu.images).id
-    # 50 of the 200 GB of free block storage.
+    # Room for the images, the database and the routing data.
     boot_volume_size_in_gbs = 50
   }
-  # Without this, destroying the server would leave its disk behind, still
-  # counting against the free storage.
+  # Without this, destroying the server would leave its disk behind.
   preserve_boot_volume = false
 
   create_vnic_details {
     subnet_id = oci_core_subnet.public.id
-    # An ephemeral public IP comes free with the server. It changes if the
-    # server is replaced, which DNS has to follow.
+    # An ephemeral public IP. It changes if the server is replaced, which DNS
+    # has to follow.
     assign_public_ip = true
     hostname_label   = "server"
   }

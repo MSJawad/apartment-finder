@@ -1,4 +1,4 @@
-# The server and its network on Oracle Cloud's Always Free tier.
+# The server and its network on Oracle Cloud.
 #
 # Terraform runs from a laptop only, never from CI, so cloud credentials
 # never reach GitHub. The provider reads them from ~/.oci/config; nothing
