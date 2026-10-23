@@ -114,8 +114,8 @@ func TestStore(t *testing.T) {
 	if err := store.Delete(t.Context(), alice, ids[0]); err != nil {
 		t.Fatal(err)
 	}
-	// Deleting frees a place: the cap is on how many she has, not on how
-	// many she has added.
+	// Deleting frees a place: the cap is on how many a visitor has, not on
+	// how many they have added.
 	if _, err := store.Add(t.Context(), alice, place.Draft{Name: "Gym", Address: "Anger 1", Mode: region.Bike}); err != nil {
 		t.Errorf("adding after deleting one: %v", err)
 	}
