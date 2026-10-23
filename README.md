@@ -8,13 +8,13 @@ you.
 
 When I moved to Erfurt, I did all of this in a Google Sheet with some Apps Script. This
 is that sheet rebuilt as a proper service: Go, Postgres with PostGIS, a self-hosted
-router, and Kubernetes on Oracle Cloud's free tier.
+router, and Kubernetes on Oracle Cloud.
 
 It's live at **https://92-5-186-10.sslip.io**.
 
 ## How it works
 
-Everything runs on one free Arm server:
+Everything runs on one Arm server:
 
 ```mermaid
 flowchart TB
@@ -97,7 +97,7 @@ You need an Oracle Cloud account with Frankfurt as its home region, an API key i
 ```sh
 cd deploy/terraform
 cp terraform.tfvars.example terraform.tfvars   # add your tenancy_ocid
-terraform apply                                # creates the network and server, prints its IP
+terraform apply                                # creates the server, prints its IP
 ssh ubuntu@<ip> cloud-init status --wait       # waits for k3s to install
 
 # The Kubernetes API isn't open to the internet, so kubectl goes through SSH
@@ -120,7 +120,7 @@ A new server gets a new IP, so put it (with dashes) in `host` in
 `deploy/flux/apps/apartment-finder.yaml` and in the repo's `SITE_URL` variable. The first
 install takes about 8 minutes, since the routers build their data on the server.
 
-If Terraform says "Out of host capacity", Oracle has run out of free Arm servers in that
+If Terraform says "Out of host capacity", Oracle has run out of Arm servers in that
 availability domain. Set `availability_domain = 2` or `3` in `terraform.tfvars` and try
 again.
 
@@ -161,10 +161,10 @@ directions.
 
 ### Going easy on Photon
 
-Photon is a free geocoder running on donated servers. Every response is cached in
-Postgres, including the ones that found nothing, so a typo isn't looked up again every
-time a job retries. Requests are rate limited, and the whole site accepts at most 300 new
-addresses a day, so that's the most Photon will ever get from it.
+Photon's public server is shared, and its usage policy asks you to be fair with it. Every
+response is cached in Postgres, including the ones that found nothing, so a typo isn't
+looked up again every time a job retries. Requests are rate limited, and the whole site
+accepts at most 300 new addresses a day, so that's the most Photon will ever get from it.
 
 ### Scores are worked out on every request
 
@@ -173,23 +173,14 @@ from those times and your weights, so moving a slider is just another request an
 gets measured again. The thresholds are fixed instead of relative to the other listings,
 so adding a listing never changes anyone else's score.
 
-### Oracle's free tier
+### One server that can be rebuilt from scratch
 
-The whole thing needs about 4 GB of memory. Oracle is the only big cloud that gives that
-away with no end date: 2 Arm cores and 12 GB. AWS gives you credits that run out after six
-months, and the free servers on Google Cloud and Azure only have 1 GB.
-
-Oracle could change its free tier at any point, so everything is in Terraform, and all
-the map data rebuilds itself from OpenStreetMap. I've destroyed and recreated the server
-to make sure that actually works.
+Everything fits on one Arm server with 2 cores and 12 GB of memory. The server is all
+Terraform, and the map data rebuilds itself from OpenStreetMap, so a new one only needs
+the setup above. I've destroyed and recreated it to make sure that actually works.
 
 Everything has to run on arm64. Most images already do, but the official PostGIS image is
 amd64 only, so `deploy/postgis` builds one from the official Postgres image.
-
-Oracle also takes back free servers that stay under 20% CPU, network and memory for a
-week. This site is too quiet for CPU or network to count, so memory is what keeps it
-safe. With synthetic-monitor's Prometheus and Grafana on the same server, it sits at about
-34%.
 
 ### The cluster pulls its own deploys
 
@@ -203,9 +194,9 @@ old version answered every request the whole time, CI went red, and Flux rolled 
 
 ### HTTPS without a domain
 
-sslip.io is a free DNS service where `92-5-186-10.sslip.io` resolves to `92.5.186.10`, so
-there's no domain to buy. cert-manager gets a Let's Encrypt certificate for that name and
-renews it automatically.
+The site's name comes from sslip.io, which resolves `92-5-186-10.sslip.io` to
+`92.5.186.10`, so there's no DNS to manage. cert-manager gets a Let's Encrypt certificate
+for that name and renews it automatically.
 
 ## What's missing
 
