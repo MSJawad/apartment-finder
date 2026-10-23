@@ -133,7 +133,7 @@ func TestAddListing(t *testing.T) {
 		t.Errorf("Set-Cookie = %q", cookie)
 	}
 
-	// Alice sees her listing; someone else doesn't.
+	// Alice sees their listing; someone else doesn't.
 	if got := alice.listings("").Listings; len(got) != 1 || got[0].ID != added.ID {
 		t.Errorf("alice's listings = %+v", got)
 	}

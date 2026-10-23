@@ -152,12 +152,12 @@ func TestDelete(t *testing.T) {
 		t.Errorf("bob deleting alice's listing: %v, want ErrNotFound", err)
 	}
 	if err := store.Delete(t.Context(), alice, id); err != nil {
-		t.Fatalf("alice deleting her listing: %v", err)
+		t.Fatalf("alice deleting their listing: %v", err)
 	}
 	if n := count(t, pool, "SELECT count(*) FROM listing_measurements"); n != 0 {
 		t.Errorf("%d measurements left after deleting their listing", n)
 	}
-	// The slot it used still counts towards her limits.
+	// The slot it used still counts towards their limits.
 	if n := count(t, pool, "SELECT count(*) FROM submissions"); n != 1 {
 		t.Errorf("%d submissions after deleting, want 1", n)
 	}

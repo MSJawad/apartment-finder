@@ -41,7 +41,7 @@ func TestPlaces(t *testing.T) {
 		t.Errorf("bob sees %+v", places.Places)
 	}
 
-	// The place is one more criterion for alice, and only for her.
+	// The place is one more criterion for alice, and only for alice.
 	criteria := alice.listings("?weight." + work.Criterion + "=5").Criteria
 	last := criteria[len(criteria)-1]
 	if last.Key != work.Criterion || last.Label != "Work" || last.DefaultWeight != 3 || last.Weight != 5 {
@@ -56,7 +56,7 @@ func TestPlaces(t *testing.T) {
 		t.Errorf("bob deleting alice's place: %d, want 404", resp.status)
 	}
 	if resp := alice.do(http.MethodDelete, path, "", ""); resp.status != http.StatusNoContent {
-		t.Errorf("alice deleting her place: %d %s", resp.status, resp.body)
+		t.Errorf("alice deleting their place: %d %s", resp.status, resp.body)
 	}
 }
 
