@@ -19,6 +19,7 @@ const state = {
   followPlace: null, // the same for a just-added place
   pollTimer: null,
   refreshing: null,
+  loadFailed: false, // whether the banner says loading failed
   rendered: "", // what the last render showed, to skip identical ones
 };
 
@@ -98,6 +99,7 @@ async function refresh() {
         api("GET", "/api/places"),
       ]);
       showWeightsError("");
+      if (state.loadFailed) showBanner("");
       state.criteria = listings.criteria;
       state.listings = listings.listings;
       state.places = places.places;
@@ -114,7 +116,7 @@ async function refresh() {
         // ranking and say why.
         showWeightsError(err.message);
       } else {
-        showBanner(err.message);
+        showBanner(err.message, true);
       }
     } finally {
       state.refreshing = null;
@@ -463,10 +465,14 @@ async function remove(path) {
   await refresh();
 }
 
-function showBanner(message) {
+// showBanner shows message, or hides the banner for an empty one. A banner
+// saying loading failed goes away once loading works again; one about a
+// failed action stays until the next action.
+function showBanner(message, loadFailed = false) {
   const banner = document.getElementById("banner");
   banner.textContent = message;
   banner.hidden = !message;
+  state.loadFailed = loadFailed;
 }
 
 function showWeightsError(message) {

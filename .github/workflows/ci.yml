@@ -39,9 +39,11 @@ jobs:
           shellcheck -s sh -e SC2154 deploy/terraform/setup-node.sh.tftpl
       - name: Check the compose file
         run: docker compose config -q
-      - name: Check the page script parses
+      - name: Check the page script parses and passes its tests
         # Node comes preinstalled on GitHub's Ubuntu runners.
-        run: node --check internal/web/static/app.js
+        run: |
+          node --check internal/web/static/app.js
+          node --test internal/web/app.test.mjs
       - name: Install Terraform
         # The version used locally, checked against the hash HashiCorp
         # publishes for it. Downloads retry on any error, since a CDN edge
