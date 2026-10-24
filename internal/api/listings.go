@@ -1,6 +1,7 @@
 package api
 
 import (
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -252,7 +253,7 @@ func (a *API) criteria(r *http.Request, viewer uuid.UUID) (defaults, weighted []
 		switch {
 		case !ok:
 			fields[param] = "There's no such criterion."
-		case err != nil || weight < 0 || weight > maxWeight:
+		case err != nil || math.IsNaN(weight) || weight < 0 || weight > maxWeight:
 			fields[param] = "Must be a number from 0 to " + strconv.Itoa(maxWeight) + "."
 		case counts:
 			weights[key] = weight
