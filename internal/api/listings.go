@@ -222,8 +222,9 @@ func (a *API) deleteListing(w http.ResponseWriter, r *http.Request) {
 }
 
 // criteria returns what viewer's listings are scored on, the region's
-// criteria plus one per place of theirs, both with their default weights
-// and with the weights from the query string applied.
+// criteria plus one per place of theirs that is located or still being
+// located, both with their default weights and with the weights from the
+// query string applied.
 func (a *API) criteria(r *http.Request, viewer uuid.UUID) (defaults, weighted []scoring.Criterion, err error) {
 	places, err := a.Places.List(r.Context(), viewer)
 	if err != nil {
