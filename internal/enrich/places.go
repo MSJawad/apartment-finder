@@ -32,7 +32,7 @@ func (e *Enricher) HandlePlace(ctx context.Context, job queue.Job) error {
 	}
 	err := e.locatePlace(ctx, p.PlaceID)
 	if err != nil && job.Attempts >= job.MaxAttempts {
-		if _, markErr := e.Pool.Exec(ctx,
+		if markErr := e.markFailed(ctx,
 			"UPDATE places SET status = 'failed', status_detail = $2 WHERE id = $1",
 			p.PlaceID, "We couldn't measure trips to this place. Please try adding it again later."); markErr != nil {
 			return errors.Join(err, markErr)
