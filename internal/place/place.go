@@ -1,6 +1,6 @@
 // Package place holds visitors' personal places, such as work or a
-// university. Each place is an extra scoring criterion for its visitor: the
-// trip to it from each listing, by walking or cycling.
+// university. Each place that can be found is an extra scoring criterion for
+// its visitor: the trip to it from each listing, by walking or cycling.
 package place
 
 import (
@@ -100,14 +100,20 @@ func CriterionKey(id int64) string {
 	return "place:" + strconv.FormatInt(id, 10)
 }
 
-// Criteria returns a scoring criterion for each place.
+// Criteria returns a scoring criterion for each place that is located or
+// still being located. A place that couldn't be located has no trips to
+// measure, so it is left out rather than shown as pending forever; its own
+// status says why.
 func Criteria(places []Place) []scoring.Criterion {
-	criteria := make([]scoring.Criterion, len(places))
-	for i, p := range places {
-		criteria[i] = scoring.Criterion{
+	var criteria []scoring.Criterion
+	for _, p := range places {
+		if p.Status == "not_found" || p.Status == "failed" {
+			continue
+		}
+		criteria = append(criteria, scoring.Criterion{
 			Key: CriterionKey(p.ID), Label: p.Name, Unit: p.Mode.Unit(),
 			Best: BestMinutes, Worst: WorstMinutes, Weight: DefaultWeight,
-		}
+		})
 	}
 	return criteria
 }

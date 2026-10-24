@@ -1,13 +1,18 @@
 package enrich
 
 import (
+	"context"
 	"encoding/json"
+	"log/slog"
 	"math"
 	"testing"
+	"time"
 	"uuid"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/MSJawad/apartment-finder/internal/geocode"
 	"github.com/MSJawad/apartment-finder/internal/queue"
 	"github.com/MSJawad/apartment-finder/internal/region"
 )
@@ -221,5 +226,68 @@ func TestPlaceNotFoundOrFailing(t *testing.T) {
 	}
 	if err := enricher.HandlePlace(t.Context(), queue.Job{Payload: []byte("not json")}); err == nil {
 		t.Error("HandlePlace() with a broken payload succeeded")
+	}
+}
+
+// stuckGeocoder never answers, like a geocoder that hangs, until the job's
+// deadline cancels the request.
+type stuckGeocoder struct{}
+
+func (stuckGeocoder) Geocode(ctx context.Context, _ string) (geocode.Result, error) {
+	<-ctx.Done()
+	return geocode.Result{}, ctx.Err()
+}
+
+func TestJobThatRunsOutOfTimeMarksItsItemFailed(t *testing.T) {
+	t.Parallel()
+	pool, enricher, _ := setup(t)
+	enricher.Geocoder = stuckGeocoder{}
+	listing := addListing(t, pool, "Anger 1, Erfurt")
+	work := addPlace(t, pool, addVisitor(t, pool), "Nordhäuser Straße 63, Erfurt", region.Bike)
+	for kind, payload := range map[string]any{JobKind: Payload{ListingID: listing}, PlaceJobKind: PlacePayload{PlaceID: work}} {
+		if err := queue.Enqueue(t.Context(), pool, kind, payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := pool.Exec(t.Context(), "UPDATE jobs SET max_attempts = 1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The real runner, so the job's own deadline is what fails it.
+	runner := &queue.Runner{
+		Queue:        queue.New(pool, time.Minute),
+		Handlers:     map[string]queue.Handler{JobKind: enricher.Handle, PlaceJobKind: enricher.HandlePlace},
+		Workers:      2,
+		PollInterval: 10 * time.Millisecond,
+		JobTimeout:   100 * time.Millisecond,
+		Logger:       slog.New(slog.DiscardHandler),
+		Metrics:      queue.NewMetrics(prometheus.NewRegistry()),
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	go func() { runner.Run(ctx); close(done) }()
+	for deadline := time.Now().Add(30 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		var dead int
+		if err := pool.QueryRow(t.Context(), "SELECT count(*) FROM jobs WHERE status = 'dead'").Scan(&dead); err != nil {
+			t.Fatal(err)
+		}
+		if dead == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("%d of 2 jobs dead after 30s", dead)
+		}
+	}
+	cancel()
+	<-done
+
+	for table, id := range map[string]int64{"listings": listing, "places": work} {
+		var status string
+		if err := pool.QueryRow(t.Context(), "SELECT status FROM "+table+" WHERE id = $1", id).Scan(&status); err != nil {
+			t.Fatal(err)
+		}
+		if status != "failed" {
+			t.Errorf("%s %d: status %s after its last attempt timed out, want failed", table, id, status)
+		}
 	}
 }

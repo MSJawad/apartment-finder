@@ -17,9 +17,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Every job has a time limit a few times its usual run time, so a hung step
+# fails the run instead of holding it for GitHub's default of six hours.
 jobs:
   lint:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -39,9 +42,11 @@ jobs:
           shellcheck -s sh -e SC2154 deploy/terraform/setup-node.sh.tftpl
       - name: Check the compose file
         run: docker compose config -q
-      - name: Check the page script parses
+      - name: Check the page script parses and passes its tests
         # Node comes preinstalled on GitHub's Ubuntu runners.
-        run: node --check internal/web/static/app.js
+        run: |
+          node --check internal/web/static/app.js
+          node --test internal/web/app.test.mjs
       - name: Install Terraform
         # The version used locally, checked against the hash HashiCorp
         # publishes for it. Downloads retry on any error, since a CDN edge
@@ -94,13 +99,19 @@ jobs:
 
   test:
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: Install osmium for the amenity import tests
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq osmium-tool
+        # A mirror that stops answering is retried and then gives up, rather
+        # than holding the job.
+        timeout-minutes: 5
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update -qq
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install -y -qq osmium-tool
       - run: go test -race ./...
       - name: Check every line of the scoring package is tested
         # The score is what users see; untested scoring code fails the build.
@@ -112,6 +123,7 @@ jobs:
   image:
     needs: [lint, test]
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: write
@@ -200,6 +212,8 @@ jobs:
     needs: [image]
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
+    # The wait below gives up after 15 minutes.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
