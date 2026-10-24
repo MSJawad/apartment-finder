@@ -18,7 +18,8 @@ const state = {
   follow: null, // a just-added listing id: show it on the map once located
   followPlace: null, // the same for a just-added place
   pollTimer: null,
-  refreshing: null,
+  refreshing: null, // the refresh in progress
+  refreshAgain: false, // whether it should load once more when done
   loadFailed: false, // whether the banner says loading failed
   rendered: "", // what the last render showed, to skip identical ones
 };
@@ -89,41 +90,58 @@ function weightQuery() {
 
 // --- Loading ---------------------------------------------------------------
 
-async function refresh() {
-  // One refresh at a time; a request made meanwhile waits for it.
-  if (state.refreshing) return state.refreshing;
+// refresh loads the listings and places and shows them. One load runs at a
+// time. A refresh asked for meanwhile, say by a slider moved while the
+// ranking loads, makes it load once more when it's done, so what's shown
+// always follows the latest weights; every caller's promise settles after
+// that.
+function refresh() {
+  if (state.refreshing) {
+    state.refreshAgain = true;
+    return state.refreshing;
+  }
   state.refreshing = (async () => {
-    try {
-      const [listings, places] = await Promise.all([
-        api("GET", `/api/listings${weightQuery()}`),
-        api("GET", "/api/places"),
-      ]);
-      showWeightsError("");
-      if (state.loadFailed) showBanner("");
-      state.criteria = listings.criteria;
-      state.listings = listings.listings;
-      state.places = places.places;
-      // Polling mostly brings back the same data; re-rendering it anyway
-      // would reset things like a half-clicked delete button.
-      const snapshot = JSON.stringify([state.criteria, state.listings, state.places, state.selected]);
-      if (snapshot !== state.rendered) {
-        state.rendered = snapshot;
-        render();
-      }
-    } catch (err) {
-      if (err.status === 400) {
-        // Weights the server refused, e.g. all of them at 0: keep the last
-        // ranking and say why.
-        showWeightsError(err.message);
-      } else {
-        showBanner(err.message, true);
-      }
-    } finally {
-      state.refreshing = null;
-    }
+    clearTimeout(state.pollTimer);
+    do {
+      state.refreshAgain = false;
+      await load();
+    } while (state.refreshAgain);
+    state.refreshing = null;
     schedulePoll();
   })();
   return state.refreshing;
+}
+
+async function load() {
+  try {
+    const [listings, places] = await Promise.all([
+      api("GET", `/api/listings${weightQuery()}`),
+      api("GET", "/api/places"),
+    ]);
+    // A refresh was asked for while this loaded, e.g. by a slider: the
+    // next load has the latest weights, so this one isn't shown.
+    if (state.refreshAgain) return;
+    showWeightsError("");
+    if (state.loadFailed) showBanner("");
+    state.criteria = listings.criteria;
+    state.listings = listings.listings;
+    state.places = places.places;
+    // Polling mostly brings back the same data; re-rendering it anyway
+    // would reset things like a half-clicked delete button.
+    const snapshot = JSON.stringify([state.criteria, state.listings, state.places, state.selected]);
+    if (snapshot !== state.rendered) {
+      state.rendered = snapshot;
+      render();
+    }
+  } catch (err) {
+    if (err.status === 400) {
+      // Weights the server refused, e.g. all of them at 0: keep the last
+      // ranking and say why.
+      showWeightsError(err.message);
+    } else {
+      showBanner(err.message, true);
+    }
+  }
 }
 
 // schedulePoll refreshes again shortly while anything is still being

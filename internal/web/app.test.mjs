@@ -69,6 +69,28 @@ function rent(weight) {
   return { key: "rent_per_m2", label: "Rent", default_weight: 3, weight };
 }
 
+test("a weight changed while the ranking loads is loaded next", async () => {
+  const p = page();
+  p.state.criteria = [rent(3)];
+  const first = p.refresh();
+  await settle();
+  // The slider moves to 7 while the first request is out.
+  p.state.weights.rent_per_m2 = 7;
+  const second = p.refresh();
+
+  const firstRequests = await answer(p);
+  assert.equal(firstRequests[0].path, "/api/listings");
+  const secondRequests = await answer(p);
+  assert.equal(secondRequests[0].path, "/api/listings?weight.rent_per_m2=7");
+  await Promise.all([first, second]);
+
+  // Only the ranking under the new weight was shown, and nothing else loads.
+  assert.deepEqual(p.rendered, [[rent(7)]]);
+  assert.equal(p.state.criteria[0].weight, 7);
+  assert.equal(p.requests.length, 0);
+  assert.equal(p.state.refreshing, null);
+});
+
 test("the banner goes once loading works again", async () => {
   const p = page();
   const failed = p.refresh();
