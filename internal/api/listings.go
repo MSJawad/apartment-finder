@@ -229,7 +229,14 @@ func (a *API) criteria(r *http.Request, viewer uuid.UUID) (defaults, weighted []
 		return nil, nil, err
 	}
 	defaults = append(a.Region.Criteria(), place.Criteria(places)...)
-	known := make(map[string]bool, len(defaults))
+	// known says which keys a weight may name and whether it counts. A place
+	// that couldn't be located isn't a criterion, but the page may have
+	// saved a weight for it while it was still being located, so that weight
+	// is accepted and ignored.
+	known := make(map[string]bool, len(defaults)+len(places))
+	for _, p := range places {
+		known[place.CriterionKey(p.ID)] = false
+	}
 	for _, c := range defaults {
 		known[c.Key] = true
 	}
@@ -241,12 +248,13 @@ func (a *API) criteria(r *http.Request, viewer uuid.UUID) (defaults, weighted []
 			continue
 		}
 		weight, err := strconv.ParseFloat(values[0], 64)
+		counts, ok := known[key]
 		switch {
-		case !known[key]:
+		case !ok:
 			fields[param] = "There's no such criterion."
 		case err != nil || weight < 0 || weight > maxWeight:
 			fields[param] = "Must be a number from 0 to " + strconv.Itoa(maxWeight) + "."
-		default:
+		case counts:
 			weights[key] = weight
 		}
 	}

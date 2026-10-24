@@ -118,3 +118,50 @@ func TestPlaceTripsCountInTheScore(t *testing.T) {
 		t.Errorf("trip to work = %+v", trip)
 	}
 }
+
+func TestPlaceThatCouldNotBeLocatedIsNoCriterion(t *testing.T) {
+	t.Parallel()
+	pool, server := setup(t, visitor.Limits{PerHour: 100, PerDay: 100, SiteWidePerDay: 100})
+	alice := newBrowser(t, server)
+	var home listingJSON
+	decode(t, alice.addListing(validListing).body, &home)
+	measured := map[string]float64{}
+	for _, c := range alice.listings("").Criteria {
+		measured[c.Key] = 5
+	}
+	score(t, pool, home.ID, measured)
+
+	for _, status := range []string{"not_found", "failed"} {
+		var work placeJSON
+		decode(t, alice.addPlace(validPlace).body, &work)
+		// As the worker leaves it.
+		if _, err := pool.Exec(t.Context(),
+			"UPDATE places SET status = $2, status_detail = 'We couldn''t find this address in Thuringia.' WHERE id = $1",
+			work.ID, status); err != nil {
+			t.Fatal(err)
+		}
+
+		// A weight the page saved while the place was being located is
+		// still accepted, but the place is no criterion and nothing waits
+		// for its trips, so the page stops polling.
+		got := alice.listings("?weight." + work.Criterion + "=5")
+		for _, c := range got.Criteria {
+			if c.Key == work.Criterion {
+				t.Errorf("%s place: still a criterion: %+v", status, c)
+			}
+		}
+		for _, c := range got.Listings[0].Score.Breakdown {
+			if c.Key == work.Criterion || c.Outcome == "pending" {
+				t.Errorf("%s place: breakdown has %+v", status, c)
+			}
+		}
+
+		// The place itself says what went wrong.
+		var places placesJSON
+		decode(t, alice.do(http.MethodGet, "/api/places", "", "").body, &places)
+		last := places.Places[len(places.Places)-1]
+		if last.ID != work.ID || last.Status != status || last.StatusDetail == "" {
+			t.Errorf("%s place: listed as %+v", status, last)
+		}
+	}
+}
