@@ -305,7 +305,7 @@ func TestRankingFollowsTheWeights(t *testing.T) {
 	}
 
 	for _, bad := range []string{
-		"?weight.rent_per_m2=-1", "?weight.rent_per_m2=11", "?weight.rent_per_m2=lots", "?weight.view=3",
+		"?weight.rent_per_m2=-1", "?weight.rent_per_m2=11", "?weight.rent_per_m2=lots", "?weight.rent_per_m2=NaN", "?weight.view=3",
 		"?weight.rent_per_m2=0&weight.size_m2=0&weight.rooms=0&weight.category:supermarket=0&weight.category:transit_stop=0" +
 			"&weight.category:pharmacy=0&weight.category:doctor=0&weight.category:park=0&weight.category:train_station=0&weight.category:gym=0",
 	} {

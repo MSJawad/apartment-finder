@@ -71,10 +71,12 @@ server.
 
 ## Running it locally
 
-You need Go 1.27, Docker and [osmium](https://osmcode.org/osmium-tool/).
+You need Go 1.27, Docker and [osmium](https://osmcode.org/osmium-tool/), and Node for the
+page's tests.
 
 ```sh
 go test -race ./...            # the integration tests start their own PostGIS container
+node --test internal/web/app.test.mjs   # the page script's tests
 
 scripts/prepare-routing.sh     # downloads the map and builds the routing data, ~4 min
 docker compose up -d --wait    # Postgres and the two routers

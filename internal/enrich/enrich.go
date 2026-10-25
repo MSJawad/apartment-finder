@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,6 +31,10 @@ const JobKind = "enrich_listing"
 // routed to. The nearest in a straight line isn't always the nearest on foot,
 // since rivers and railway lines force detours, so a few are compared.
 const candidatesPerCategory = 5
+
+// markTimeout bounds marking a listing or place failed after its job's last
+// attempt.
+const markTimeout = 5 * time.Second
 
 // Payload is an enrich job's payload.
 type Payload struct {
@@ -72,12 +77,22 @@ func (e *Enricher) Handle(ctx context.Context, job queue.Job) error {
 	}
 	err := e.enrich(ctx, p.ListingID)
 	if err != nil && job.Attempts >= job.MaxAttempts {
-		if _, markErr := e.Pool.Exec(ctx,
+		if markErr := e.markFailed(ctx,
 			"UPDATE listings SET status = 'failed', status_detail = $2 WHERE id = $1",
 			p.ListingID, "We couldn't measure this listing. Please try adding it again later."); markErr != nil {
 			return errors.Join(err, markErr)
 		}
 	}
+	return err
+}
+
+// markFailed runs sql, which marks a listing or place failed, under a
+// deadline of its own: the job may have failed because it ran out of time,
+// and then ctx has run out too.
+func (e *Enricher) markFailed(ctx context.Context, sql string, args ...any) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), markTimeout)
+	defer cancel()
+	_, err := e.Pool.Exec(ctx, sql, args...)
 	return err
 }
 
