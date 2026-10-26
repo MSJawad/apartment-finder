@@ -1,5 +1,7 @@
 # apartment-finder
 
+[![CI](https://github.com/MSJawad/apartment-finder/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/MSJawad/apartment-finder/actions/workflows/ci.yml)
+
 Scores apartment listings by how close they are to the places you'd actually go:
 supermarkets, bus and tram stops, pharmacies, doctors, parks, the train station and the
 gym. You add a listing, and a few seconds later it's on the map with a score out of 100
